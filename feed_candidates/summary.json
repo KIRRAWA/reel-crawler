@@ -1,0 +1,78 @@
+{
+  "generated_utc": "2026-10-15T03:29:33.422489+00:00",
+  "discovered": 0,
+  "screened_candidates": 0,
+  "excluded": 0,
+  "needs_review": 0,
+  "total_run_seconds": 258.02,
+  "mean_candidate_duration_seconds": null,
+  "candidate_video_seconds": 0,
+  "automated_screening_seconds": 0,
+  "duplicate_encounters": 0,
+  "incomplete_runs": 0,
+  "reasons": {},
+  "categories": [
+    {
+      "category": "comedy",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "animals",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "food",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "sports_fitness",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "travel_nature",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "everyday_life",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "art_diy",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "science_technology",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "beauty_fashion",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "music_dance",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "gaming",
+      "count": 0,
+      "percent_of_candidates": 0
+    },
+    {
+      "category": "other",
+      "count": 0,
+      "percent_of_candidates": 0
+    }
+  ],
+  "sampling": "One account recommendation feed, including prefetched videos; not a representative US population sample.",
+  "verification": "Automated predictions from audio and sampled frames; final human review pending. No actual creator/filming country verified."
+}
