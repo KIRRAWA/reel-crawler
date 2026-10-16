@@ -1,16 +1,19 @@
 {
-  "generated_utc": "2026-10-15T03:29:33.422489+00:00",
-  "discovered": 0,
+  "generated_utc": "2026-10-16T07:30:27.560759+00:00",
+  "discovered": 5,
   "screened_candidates": 0,
   "excluded": 0,
-  "needs_review": 0,
-  "total_run_seconds": 258.02,
+  "needs_review": 5,
+  "total_run_seconds": 2975.14,
   "mean_candidate_duration_seconds": null,
   "candidate_video_seconds": 0,
-  "automated_screening_seconds": 0,
+  "automated_screening_seconds": 24.21,
   "duplicate_encounters": 0,
   "incomplete_runs": 0,
-  "reasons": {},
+  "reasons": {
+    "screening_failed:HTTPError": 2,
+    "screening_failed:TargetClosedError": 3
+  },
   "categories": [
     {
       "category": "comedy",

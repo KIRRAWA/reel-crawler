@@ -1,0 +1,2 @@
+﻿like_count,likes_checked_utc,url,username,caption,category,status,reason,duration_seconds,audio_status,transcript,audio_chunks_json,visual_evidence_json,screening_seconds,discovery_method,first_seen_utc,first_run_id,last_screen_run_id,human_review,country_verified,screen_version
+3,2026-10-16T08:18:05.136871+00:00,https://www.instagram.com/reel/DdQSghKhGNN/,adityarajavelu,,other,excluded,below_min_likes:3<10000,,unchecked,,[],[],1.275212599999577,feed_response_prefetch,2026-10-16T07:31:53.023140+00:00,210e6f856f27,4efdb27cef96,pending,no,feed-1.3

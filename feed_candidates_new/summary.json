@@ -1,0 +1,84 @@
+{
+  "generated_utc": "2026-10-16T08:23:33.390255+00:00",
+  "discovered": 10,
+  "screened_candidates": 1,
+  "excluded": 1,
+  "needs_review": 8,
+  "total_run_seconds": 1437.11,
+  "mean_candidate_duration_seconds": 118.59,
+  "candidate_video_seconds": 118.59,
+  "automated_screening_seconds": 349.83,
+  "duplicate_encounters": 2,
+  "incomplete_runs": 0,
+  "reasons": {
+    "visual_or_context_uncertain": 6,
+    "below_min_likes:3<10000": 1,
+    "audio_language_uncertain": 1,
+    "automated_screen_pass_not_human_verified": 1,
+    "screening_failed:RuntimeError": 1
+  },
+  "categories": [
+    {
+      "category": "comedy",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "animals",
+      "count": 1,
+      "percent_of_candidates": 100.0
+    },
+    {
+      "category": "food",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "sports_fitness",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "travel_nature",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "everyday_life",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "art_diy",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "science_technology",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "beauty_fashion",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "music_dance",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "gaming",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    },
+    {
+      "category": "other",
+      "count": 0,
+      "percent_of_candidates": 0.0
+    }
+  ],
+  "sampling": "One account recommendation feed, including prefetched videos; not a representative US population sample.",
+  "verification": "Automated predictions from audio and sampled frames; final human review pending. No actual creator/filming country verified."
+}
