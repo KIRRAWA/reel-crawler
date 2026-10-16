@@ -1,4 +1,4 @@
-# English Reels feed collector
+# Reels feed collector
 
 Fresh standalone package for collecting general-interest Reels, screening English audio/text and political/sensitive content, and exporting Google Sheets-compatible CSVs and statistics.
 
