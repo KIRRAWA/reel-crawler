@@ -2,7 +2,7 @@
 
 ## What's new in this branch (changes from the original `main`)
 
-This branch builds on the original collector and adds Mac support, screening-speed controls, strict two-phase screening, and a keyboard-driven human-review toolchain. All new collector flags are optional; defaults reproduce the original behavior exactly.
+This branch builds on the original collector and adds Mac support, screening-speed controls, strict two-phase screening, parallel rescreen workers, and a keyboard-driven human-review toolchain. All new collector flags are optional; per-item screening logic matches the original — only `--workers` changes execution concurrency (default 2).
 
 **Strict two-phase screening (account-safety enforcement)**
 - Collection runs NEVER screen: inline screening has been removed from the scroll loop, so every Reel gets exactly the fixed `--delay` dwell and the account's engagement signal cannot be polluted by variable model passes. `--collect-only` is kept only for CLI compatibility.
@@ -20,6 +20,8 @@ This branch builds on the original collector and adds Mac support, screening-spe
 - `--frame-interval SECONDS` — spacing between sampled frames (default 2.0, as before). Higher = faster screening, coarser coverage.
 - `--vision-batch N` — frames per vision-model call (default 1, as before). `0` sends the whole video in one call; the Ollama context window expands automatically to fit the batch.
 - `--speech-model NAME` — e.g. `base` for faster CPU transcription; language gates are unchanged.
+- `--workers N` — items screened in parallel during `--rescreen` (default 2). Downloads, frame decoding and transcription overlap while vision calls queue through Ollama (which serves one model request at a time by default), so 2-4 workers capture most of the gain without extra GPU load.
+- Dead proxy environment variables are stripped in-process at startup, so no `env -u ...` prefix is ever needed on machines whose shell exports stale proxy settings.
 
 With `--frame-interval 5 --vision-batch 0 --speech-model base` on an Apple Silicon Mac, screening runs at roughly 1-2 minutes per 90-second item instead of 10-15.
 

@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from collections import Counter
@@ -111,7 +112,8 @@ def decide(audio, visuals):
 class Store:
     def __init__(self, folder):
         self.folder=Path(folder); self.folder.mkdir(parents=True,exist_ok=True)
-        self.db=sqlite3.connect(self.folder/'feed_collection.sqlite'); self.db.row_factory=sqlite3.Row
+        self.db=sqlite3.connect(self.folder/'feed_collection.sqlite',check_same_thread=False); self.db.row_factory=sqlite3.Row
+        self.lock=threading.RLock()   # shared across rescreen worker threads
         self.db.executescript('''CREATE TABLE IF NOT EXISTS feed_items (
           url TEXT PRIMARY KEY, username TEXT, caption TEXT, discovery_method TEXT,
           first_seen_utc TEXT, first_run_id TEXT, status TEXT, reason TEXT,
@@ -132,22 +134,30 @@ class Store:
 
     # Migration also works with existing collections.
     def record_likes(self, url, count):
-        self.db.execute('UPDATE feed_items SET like_count=?,likes_checked_utc=? WHERE url=?',
-                        (count,now(),url))
-        self.db.commit()
+        with self.lock:
+            self.db.execute('UPDATE feed_items SET like_count=?,likes_checked_utc=? WHERE url=?',
+                            (count,now(),url))
+            self.db.commit()
 
-    def count(self): return self.db.execute('SELECT COUNT(*) FROM feed_items').fetchone()[0]
+    def count(self):
+        with self.lock: return self.db.execute('SELECT COUNT(*) FROM feed_items').fetchone()[0]
 
     def add(self, item, run):
-        cur=self.db.execute('INSERT OR IGNORE INTO feed_items (url,username,caption,discovery_method,first_seen_utc,first_run_id,status,reason,category,duration_seconds,audio_json,visual_json,screening_seconds,screen_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          (item['url'],item.get('username',''),item.get('caption',''),item.get('discovery_method','visible_feed_link'),now(),run,'review','not_screened','other',None,'{}','[]',0,VERSION))
-        self.db.commit(); return cur.rowcount==1
+        with self.lock:
+            cur=self.db.execute('INSERT OR IGNORE INTO feed_items (url,username,caption,discovery_method,first_seen_utc,first_run_id,status,reason,category,duration_seconds,audio_json,visual_json,screening_seconds,screen_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              (item['url'],item.get('username',''),item.get('caption',''),item.get('discovery_method','visible_feed_link'),now(),run,'review','not_screened','other',None,'{}','[]',0,VERSION))
+            self.db.commit(); return cur.rowcount==1
 
     def result(self,url,status,reason,category,duration,audio,visuals,seconds,screen_run_id=None):
-        self.db.execute('UPDATE feed_items SET status=?,reason=?,category=?,duration_seconds=?,audio_json=?,visual_json=?,screening_seconds=?,screen_version=?,last_screen_run_id=? WHERE url=?',
-          (status,reason,category,duration,json.dumps(audio,ensure_ascii=False),json.dumps(visuals,ensure_ascii=False),seconds,VERSION,screen_run_id,url)); self.db.commit()
+        with self.lock:
+            self.db.execute('UPDATE feed_items SET status=?,reason=?,category=?,duration_seconds=?,audio_json=?,visual_json=?,screening_seconds=?,screen_version=?,last_screen_run_id=? WHERE url=?',
+              (status,reason,category,duration,json.dumps(audio,ensure_ascii=False),json.dumps(visuals,ensure_ascii=False),seconds,VERSION,screen_run_id,url)); self.db.commit()
 
     def export(self):
+        with self.lock:
+            return self._export_locked()
+
+    def _export_locked(self):
         rows=[dict(r) for r in self.db.execute('SELECT * FROM feed_items ORDER BY first_seen_utc')]
         for r in rows:
             a=json.loads(r.pop('audio_json')); v=json.loads(r.pop('visual_json'))
@@ -383,6 +393,20 @@ def run(args,store,asr,run_id,counters):
                 context=launch_context(p,args)
                 try: save_session_cookies(context,cookie_file)
                 finally: context.close()
+        workers=max(1,int(getattr(args,'workers',1)))
+        if workers>1 and len(rows)>1:
+            import concurrent.futures
+            print(f'Rescreening {len(rows)} items with {workers} workers...',flush=True)
+            done=0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                futures=[ex.submit(screen_item,item,None,asr,args,store,cookie_file=cookie_file) for item in rows]
+                for fut in concurrent.futures.as_completed(futures):
+                    try: fut.result()
+                    except Exception as exc: print(f'worker error: {type(exc).__name__}: {exc}',flush=True)
+                    done+=1
+                    print(f'  Rescreened {done}/{len(rows)}',flush=True)
+                    if done%5==0 or done==len(futures): store.export()
+            return
         for item in rows:
             screen_item(item,None,asr,args,store,cookie_file=cookie_file)
             store.export()
@@ -478,8 +502,9 @@ def main():
     ap.add_argument('--profile',default='instagram-session'); ap.add_argument('--output',default='feed_candidates')
     ap.add_argument('--channel',default='msedge',help='Browser channel: msedge (real Edge, default), chrome, or chromium (bundled)')
     ap.add_argument('--vision-model',default='qwen2.5vl:3b'); ap.add_argument('--speech-model',default='small')
+    ap.add_argument('--workers',type=int,default=2,help='Items screened in parallel during --rescreen; overlaps downloads/transcription with vision calls')
     args=ap.parse_args()
-    if min(args.target,args.scrolls,args.max_seconds)<1 or args.max_seconds>180 or args.delay<1 or args.frame_interval<0.5 or args.vision_batch<0:
+    if min(args.target,args.scrolls,args.max_seconds)<1 or args.max_seconds>180 or args.delay<1 or args.frame_interval<0.5 or args.vision_batch<0 or args.workers<1:
         ap.error('Counts must be positive, max-seconds <=180, delay >=1, frame-interval >=0.5 and vision-batch >=0.')
     if args.min_likes < 0: ap.error('min-likes must be nonnegative.')
     if args.rescreen and args.collect_only: ap.error('--rescreen cannot be combined with --collect-only.')
