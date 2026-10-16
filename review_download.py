@@ -16,8 +16,10 @@ When a reel is downloaded, its model verdict (status/reason/category,
 per-batch visual reasons, transcript snippet) is printed next to it so you
 can compare what the model claimed with what the video actually shows.
 
-Run this only while no collector/rescreen is using the browser profile
-(Edge hands a second launch to the existing instance and exits silently).
+Uses the cookie jar saved by --login when present, so normally no browser is
+launched at all. Only run the cookie-export fallback while no collector is
+using the browser profile (Edge hands a second launch to the existing
+instance and exits silently).
 """
 
 import argparse
@@ -55,9 +57,10 @@ def shortcode(url):
 
 def verdict_text(row):
     """Human-readable model verdict for one item."""
-    vis = json.loads(row.get('visual_evidence_json') or '[]')
+    vis = json.loads(row.get('visual_json') or '[]')
+    aud = json.loads(row.get('audio_json') or '{}')
     parts = [f"status={row['status']}  reason={row['reason']}  category={row['category']}"]
-    parts.append(f"audio={row.get('audio_status')}  duration={row.get('duration_seconds')}s")
+    parts.append(f"audio={aud.get('status')}  duration={row.get('duration_seconds')}s")
     for v in vis:
         fr = v.get('sample_batch_start_index', 0)
         n = v.get('sample_frame_count', 0)
@@ -66,17 +69,21 @@ def verdict_text(row):
             f"(pol={v.get('political')} sens={v.get('sensitive')} "
             f"lang={v.get('meaningful_text_language')} conf={v.get('confidence')}) "
             f"-- {v.get('reason')}")
-    if row.get('transcript'):
-        parts.append('  transcript: ' + row['transcript'][:300])
+    if aud.get('transcript'):
+        parts.append('  transcript: ' + aud['transcript'][:300])
     return '\n'.join(parts)
 
 
 def export_cookies():
-    """Read the collector profile's Instagram cookies via Playwright.
+    """Return this collector's Instagram cookies as Netscape cookie-file lines.
 
-    Launches the browser briefly but navigates nowhere, so Instagram sees
-    no activity at all.
+    Prefers the cookie jar persisted by feed_collector.py --login; only if it
+    is missing launches the browser briefly (navigating nowhere, so Instagram
+    sees no activity).
     """
+    jar = Path(PROFILE) / 'cookies.txt'
+    if jar.is_file():
+        return jar.read_text(encoding='utf-8').splitlines()
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
