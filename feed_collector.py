@@ -203,16 +203,34 @@ def enforce_min_likes(count, minimum):
         raise LikeRequirementError('excluded',f'below_min_likes:{count}<{minimum}')
 
 
-def fetch_video(url, folder, context, max_seconds, min_likes, store):
-    import yt_dlp
-    # Export ONLY this collector's Instagram session into a temporary cookie jar.
-    cookies=Path(folder)/'cookies.txt'
+def save_session_cookies(context, path):
+    """Export this collector's Instagram login into a persisted Netscape cookie jar."""
     lines=['# Netscape HTTP Cookie File']
     for c in context.cookies(['https://www.instagram.com/']):
         domain=c['domain']
         if domain.lstrip('.') not in ['instagram.com','www.instagram.com']: continue
         lines.append('\t'.join([domain,'TRUE' if domain.startswith('.') else 'FALSE',c.get('path','/'),'TRUE' if c.get('secure') else 'FALSE',str(max(0,int(c.get('expires',0)))),c['name'],c['value']]))
-    cookies.write_text('\n'.join(lines)+'\n',encoding='utf-8'); os.chmod(cookies,0o600)
+    path.write_text('\n'.join(lines)+'\n',encoding='utf-8'); os.chmod(path,0o600)
+    if '\tsessionid\t' not in path.read_text():
+        raise RuntimeError('No Instagram login in this browser profile. Run: python feed_collector.py --login')
+    print('Saved Instagram session cookies to '+str(path),flush=True)
+
+
+def fetch_video(url, folder, context, max_seconds, min_likes, store, cookie_file=None):
+    import yt_dlp
+    # Prefer the persisted cookie jar (saved by --login) so screening never needs
+    # a live browser. Only fall back to exporting a temporary jar from a context.
+    own=False
+    if cookie_file and Path(cookie_file).is_file():
+        cookies=Path(cookie_file)
+    else:
+        cookies=Path(folder)/'cookies.txt'; own=True
+        lines=['# Netscape HTTP Cookie File']
+        for c in context.cookies(['https://www.instagram.com/']):
+            domain=c['domain']
+            if domain.lstrip('.') not in ['instagram.com','www.instagram.com']: continue
+            lines.append('\t'.join([domain,'TRUE' if domain.startswith('.') else 'FALSE',c.get('path','/'),'TRUE' if c.get('secure') else 'FALSE',str(max(0,int(c.get('expires',0)))),c['name'],c['value']]))
+        cookies.write_text('\n'.join(lines)+'\n',encoding='utf-8'); os.chmod(cookies,0o600)
     class Silent:
         def debug(self,*a): pass
         def warning(self,*a): pass
@@ -239,7 +257,7 @@ def fetch_video(url, folder, context, max_seconds, min_likes, store):
             if not path.is_file(): raise RuntimeError('Video unavailable')
             return path
     finally:
-        cookies.unlink(missing_ok=True)
+        if own: cookies.unlink(missing_ok=True)
 
 
 def sample_frames(path,folder,max_seconds,interval=2.0):
@@ -314,13 +332,13 @@ def preflight(model):
     if 'vision' not in r.json().get('capabilities',[]): raise RuntimeError('A local vision model is required')
 
 
-def screen_item(item, context, asr, args, store):
+def screen_item(item, context, asr, args, store, cookie_file=None):
     start=time.perf_counter()
     audio={}; visuals=[]; duration=None; category='other'
     try:
         with tempfile.TemporaryDirectory(prefix='reel-screen-') as folder:
             print('  Checking likes before download...',flush=True)
-            path=fetch_video(item['url'],folder,context,args.max_seconds,args.min_likes,store)
+            path=fetch_video(item['url'],folder,context,args.max_seconds,args.min_likes,store,cookie_file)
             frames,duration=sample_frames(path,folder,args.max_seconds,args.frame_interval)
             print('  Analyzing audio...',flush=True)
             audio=analyze_audio(path,asr)
@@ -340,16 +358,37 @@ def screen_item(item, context, asr, args, store):
     print(f'{status}: {reason}',flush=True)
 
 
+def launch_context(p,args):
+    # Stealth: run as a normal branded browser without automation markers.
+    # Instagram loops login verification for browsers flagged as automation.
+    context=p.chromium.launch_persistent_context(str(Path(args.profile).resolve()),headless=False,locale='en-US',
+        channel=getattr(args,'channel','msedge') or None,
+        args=['--disable-blink-features=AutomationControlled'],
+        ignore_default_args=['--enable-automation'])
+    context.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+    return context
+
+
 def run(args,store,asr,run_id,counters):
     from playwright.sync_api import sync_playwright
+    cookie_file=Path(args.profile)/'cookies.txt'
+    if args.rescreen:
+        # Strict two-phase enforcement: screening NEVER runs inside a browsing
+        # session. If the persisted cookie jar is missing, the only browser step
+        # is exporting it -- with no page navigation, so the account sends zero
+        # feed dwell/engagement signals while screening.
+        rows=[dict(r) for r in store.db.execute("SELECT url,username,caption FROM feed_items WHERE reason='not_screened' OR reason LIKE 'screening_failed:%' ORDER BY first_seen_utc LIMIT ?",(args.target,))]
+        if not cookie_file.is_file():
+            with sync_playwright() as p:
+                context=launch_context(p,args)
+                try: save_session_cookies(context,cookie_file)
+                finally: context.close()
+        for item in rows:
+            screen_item(item,None,asr,args,store,cookie_file=cookie_file)
+            store.export()
+        return
     with sync_playwright() as p:
-        # Stealth: run as a normal branded browser without automation markers.
-        # Instagram loops login verification for browsers flagged as automation.
-        context=p.chromium.launch_persistent_context(str(Path(args.profile).resolve()),headless=False,locale='en-US',
-            channel=getattr(args,'channel','msedge') or None,
-            args=['--disable-blink-features=AutomationControlled'],
-            ignore_default_args=['--enable-automation'])
-        context.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+        context=launch_context(p,args)
         page=context.new_page()
         for extra in list(context.pages):
             if extra is not page: extra.close()
@@ -357,13 +396,14 @@ def run(args,store,asr,run_id,counters):
         try:
             if args.login:
                 page.goto('https://www.instagram.com/',wait_until='domcontentloaded')
-                input('Log in manually. Return here and press Enter once logged in: '); return
-            if args.rescreen:
-                rows=[dict(r) for r in store.db.execute("SELECT url,username,caption FROM feed_items WHERE reason='not_screened' OR reason LIKE 'screening_failed:%' ORDER BY first_seen_utc LIMIT ?",(args.target,))]
-                for item in rows:
-                    screen_item(item,context,asr,args,store)
-                    store.export()
+                input('Log in manually. Return here and press Enter once logged in: ')
+                save_session_cookies(context,cookie_file)
                 return
+            # Collection NEVER screens in this branch: the original code screened
+            # each new Reel inline while the browser sat on the feed, giving the
+            # account minutes of variable dwell per item and polluting its
+            # engagement signal. Every Reel now gets exactly the fixed --delay.
+            print(f'Collection-only run: screening is disabled during collection (uniform {args.delay:.0f}s dwell per Reel). Screen afterwards with --rescreen.',flush=True)
             pending={}; observed=set()
             def on_response(response):
                 # Only process responses to the ordinary feed navigation, not private API probes.
@@ -398,7 +438,6 @@ def run(args,store,asr,run_id,counters):
                     if store.add(item,run_id):
                         fresh+=1; counters['new_unique']+=1
                         print(f'New Reel {counters["new_unique"]}/{args.target}: {url}',flush=True)
-                        if not args.collect_only: screen_item(item,context,asr,args,store)
                     else: counters['duplicates']+=1
                     if counters['new_unique']>=args.target: return
                     if counters['new_unique']%5==0: store.export()
@@ -420,12 +459,12 @@ def run(args,store,asr,run_id,counters):
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--login',action='store_true'); ap.add_argument('--check',action='store_true')
-    ap.add_argument('--collect-only',action='store_true',help='Save unreviewed links only; no screening claims')
+    ap.add_argument('--collect-only',action='store_true',help='Deprecated: collection never screens in this branch; flag kept for compatibility')
     ap.add_argument('--manual-start',action='store_true',help='Pause after navigation so you can open a playing Reel before collection')
-    ap.add_argument('--rescreen',action='store_true',help='Rescreen first target stored items, updating existing records')
+    ap.add_argument('--rescreen',action='store_true',help='Screen stored items offline using the saved login cookie jar; never opens the feed')
     ap.add_argument('--analyze-only',action='store_true')
     ap.add_argument('--target',type=int,default=20,help='New discovered Reels this run; not number passing filters')
-    ap.add_argument('--scrolls',type=int,default=2000); ap.add_argument('--delay',type=float,default=5)
+    ap.add_argument('--scrolls',type=int,default=2000); ap.add_argument('--delay',type=float,default=5,help='Seconds each Reel stays on screen during collection (uniform dwell)')
     ap.add_argument('--min-likes',type=int,default=10000,help='Minimum reported likes before screening; unknown counts need review. Use 0 to disable.')
     ap.add_argument('--max-seconds',type=int,default=120)
     ap.add_argument('--frame-interval',type=float,default=2.0,help='Seconds between sampled frames; higher = faster screening, coarser coverage')
@@ -437,17 +476,21 @@ def main():
     if min(args.target,args.scrolls,args.max_seconds)<1 or args.max_seconds>180 or args.delay<1 or args.frame_interval<0.5 or args.vision_batch<0:
         ap.error('Counts must be positive, max-seconds <=180, delay >=1, frame-interval >=0.5 and vision-batch >=0.')
     if args.min_likes < 0: ap.error('min-likes must be nonnegative.')
-    if args.rescreen and args.collect_only: ap.error('Rescreen requires screening.')
+    if args.rescreen and args.collect_only: ap.error('--rescreen cannot be combined with --collect-only.')
     if args.login:
         run(args,None,None,None,{}); return
+    if args.check:
+        try: preflight(args.vision_model)
+        except Exception as exc:
+            print(f'Setup not ready ({type(exc).__name__}). Read README.md. Install feed dependencies, start Ollama and pull '+args.vision_model); raise SystemExit(1)
+        print('Dependencies and local vision model are ready. Speech model downloads on first --rescreen run.')
+        return
     store=Store(args.output)
     if args.analyze_only: store.export(); store.db.close(); return
     asr=None
-    if not args.collect_only:
+    if args.rescreen:
         try:
             preflight(args.vision_model)
-            if args.check:
-                print('Dependencies and local vision model are ready. Speech model downloads on first screened run.'); store.db.close(); return
             from faster_whisper import WhisperModel
             print('Loading local speech model (first use downloads model files)...',flush=True)
             asr=WhisperModel(args.speech_model,device='cpu',compute_type='int8')
@@ -469,6 +512,9 @@ def main():
         result=store.export(); store.db.close()
         print(f'This run: {elapsed/60:.1f} min. Dataset: {result["screened_candidates"]} screened candidates, {result["needs_review"]} need review, {result["excluded"]} excluded.')
         print('Open '+str(Path(args.output).resolve()/'analysis.html'))
+        if not args.rescreen:
+            print('Screening is disabled during collection. To screen the collected items offline (no browser, no feed activity):')
+            print(f'  python feed_collector.py --rescreen --target {counters["new_unique"]} --output {args.output}')
     raise SystemExit(code)
 
 if __name__=='__main__': main()

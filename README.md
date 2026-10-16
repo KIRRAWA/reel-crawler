@@ -2,7 +2,14 @@
 
 ## What's new in this branch (changes from the original `main`)
 
-This branch builds on the original collector and adds Mac support, screening-speed controls, and a keyboard-driven human-review toolchain. All new collector flags are optional; defaults reproduce the original behavior exactly.
+This branch builds on the original collector and adds Mac support, screening-speed controls, strict two-phase screening, and a keyboard-driven human-review toolchain. All new collector flags are optional; defaults reproduce the original behavior exactly.
+
+**Strict two-phase screening (account-safety enforcement)**
+- Collection runs NEVER screen: inline screening has been removed from the scroll loop, so every Reel gets exactly the fixed `--delay` dwell and the account's engagement signal cannot be polluted by variable model passes. `--collect-only` is kept only for CLI compatibility.
+- `--login` persists the session to `<profile>/cookies.txt` (mode 600) for offline use.
+- `--rescreen` is fully browserless when that cookie jar exists: it never opens a page or the feed. If the jar is missing it only launches the profile to export cookies (no navigation) and aborts with a clear message when no login is found.
+- After every collection run the tool prints the exact `--rescreen` command to run next.
+- This intentionally removes the original single-command inline screening behavior; upstream main keeps it.
 
 **Fixes**
 - `requirements.txt` now pins `av>=12,<16`. av 19 removed the `metadata_errors` parameter that faster-whisper 1.x passes to `av.open`, so every screening crashed with `TypeError` on fresh installs (reproduced on macOS, Python 3.13).
@@ -67,15 +74,18 @@ py feed_collector.py --check
 py feed_collector.py --login
 ```
 
-Sign in manually, return to the terminal and press Enter.
+Sign in manually, return to the terminal and press Enter. The session is also saved to `instagram-session/cookies.txt` so rescreen runs work fully offline.
 
 ## Small trial, then scale
 
 ```powershell
 py feed_collector.py --target 5
+py feed_collector.py --rescreen --target 5
 ```
 
-The first screened run downloads the speech model. The browser opens your normal Reels page and scrolls automatically. It records links from rendered feed links and Reel metadata that Instagram delivers during normal navigation, including prefetched items. Prefetched items may not have appeared on screen. It retrieves accessible candidate video files temporarily for analysis, then deletes them and its temporary Instagram cookie file. It never likes, follows, comments, messages, posts or bypasses login challenges.
+Collection first: the browser opens your normal Reels page and scrolls automatically, holding each Reel for the fixed --delay so the account's engagement signal stays uniform. It records links from rendered feed links and Reel metadata that Instagram delivers during normal navigation, including prefetched items. Prefetched items may not have appeared on screen.
+
+Then rescreen: the first rescreen run downloads the speech model. It retrieves accessible candidate video files temporarily for analysis, then deletes them. It never likes, follows, comments, messages, posts or bypasses login challenges.
 
 Open the report:
 
@@ -87,9 +97,10 @@ When the first trial works:
 
 ```powershell
 py feed_collector.py --target 1000
+py feed_collector.py --rescreen --target 1000
 ```
 
-Here --target counts NEW DISCOVERED Reels this run, not 1,000 passing candidates. Exclusions and uncertainties reduce the yield. Rerun to collect more; duplicates are skipped and previous results remain. This avoids promising a guaranteed passing count. Press Ctrl+C for a graceful stop and export.
+Here --target counts NEW DISCOVERED Reels this run, not 1,000 passing candidates. Exclusions and uncertainties reduce the yield. Rerun collection to collect more; duplicates are skipped and previous results remain. This avoids promising a guaranteed passing count. Press Ctrl+C for a graceful stop and export; a later rescreen resumes where it left off.
 
 ## What the screener does
 
@@ -125,7 +136,7 @@ This feed dataset lives alongside your earlier hashtag/account results; it does 
 py feed_collector.py --rescreen --target 1000
 ```
 
-This updates the first 1,000 stored feed items in place. It cannot rescreen your earlier multicategory database automatically; those remain preserved separately. Every run saves its configuration/policy; each item stores its first-discovery run, latest screening run ID, and screen version. Link last_screen_run_id to runs.csv for the model/policy used. Preserve an export before rescreening if you need immutable historical classifications.
+This updates the first 1,000 stored feed items in place, fully offline: it uses the cookie jar saved by --login and never opens a browser page or the feed. It cannot rescreen your earlier multicategory database automatically; those remain preserved separately. Every run saves its configuration/policy; each item stores its first-discovery run, latest screening run ID, and screen version. Link last_screen_run_id to runs.csv for the model/policy used. Preserve an export before rescreening if you need immutable historical classifications.
 
 To regenerate reports without browsing:
 
@@ -133,13 +144,7 @@ To regenerate reports without browsing:
 py feed_collector.py --analyze-only
 ```
 
-For a browser-only discovery diagnostic without models:
-
-```powershell
-py feed_collector.py --collect-only --target 5
-```
-
-This puts every collected item into review, NEVER the screened-candidates file. Later run --rescreen. Existing URLs are skipped during normal collection; use --rescreen to screen items saved in collect-only mode.
+Every collection run is browser-only discovery without models: screening never runs during collection, which keeps each Reel's on-screen time at the fixed --delay. Collected items sit unscreened until --rescreen processes them. Existing URLs are skipped during normal collection.
 
 ## US audience versus geography
 
