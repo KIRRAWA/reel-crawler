@@ -457,6 +457,12 @@ def run(args,store,asr,run_id,counters):
 
 
 def main():
+    # This Mac's shell exports proxy variables pointing at a dead local proxy
+    # (127.0.0.1:10887). yt-dlp and requests read them from the environment and
+    # every network call then fails instantly. Strip them in-process so no
+    # command prefix (env -u ...) is ever needed.
+    for k in ('http_proxy','https_proxy','all_proxy','no_proxy'):
+        os.environ.pop(k,None); os.environ.pop(k.upper(),None)
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--login',action='store_true'); ap.add_argument('--check',action='store_true')
     ap.add_argument('--collect-only',action='store_true',help='Deprecated: collection never screens in this branch; flag kept for compatibility')
