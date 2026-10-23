@@ -386,14 +386,21 @@ def sync_pull(quiet=False):
     try:
         git(['pull', '--rebase', 'origin', branch])
     except RuntimeError:
-        # first-ever pull may not have an upstream yet, or there may be
-        # nothing to rebase onto -- fall back to fetch + rebase.
-        git(['fetch', 'origin'], check=False)
+        # first-ever pull may not have an upstream yet (fresh empty remote).
+        # Distinguish that from a real failure honestly.
+        fetched = git(['fetch', 'origin'], check=False)
+        probe = git(['rev-parse', '--verify', '--quiet', f'origin/{branch}'],
+                    check=False)
+        if probe.returncode != 0:
+            if fetched.returncode != 0:
+                raise RuntimeError('sync pull failed (network, credentials, '
+                                   'or repo not found): '
+                                   + (fetched.stderr or '').strip()[-200:])
+            return  # remote exists but has nothing to pull yet
         try:
-            git(['rebase', f'origin/{branch}'], check=False)
-        except RuntimeError as exc:
-            raise RuntimeError('sync pull failed (network or no remote?): '
-                               + str(exc)) from exc
+            git(['rebase', f'origin/{branch}'])
+        except RuntimeError as rebase_exc:
+            raise RuntimeError('sync pull failed: ' + str(rebase_exc)) from rebase_exc
     refresh_pool()
     if not quiet:
         print(f'Pulled latest team state -- pool has {len(pool())} videos.')
@@ -432,30 +439,44 @@ def _push():
 # commands
 # --------------------------------------------------------------------------
 
-def cmd_init(remote=None):
+def init_local(quiet=False):
+    """Create the sync repo structure locally (no remote). Returns True if fresh."""
     if SYNC.is_dir():
-        print(f'{SYNC} already exists -- not re-initializing.')
-        return
+        return False
     (SYNC / 'accounts').mkdir(parents=True, exist_ok=True)
     (SYNC / 'items').mkdir(exist_ok=True)
     (SYNC / 'opinions').mkdir(exist_ok=True)
     (SYNC / '.gitignore').write_text('.session.json\npool.json\n', encoding='utf-8')
     (SYNC / 'config.json').write_text(
-        json.dumps({'remote': remote or '', 'auto_sync': True}, indent=2) + '\n',
+        json.dumps({'remote': '', 'auto_sync': True}, indent=2) + '\n',
         encoding='utf-8')
     try:
         git(['init', '-b', 'main'])
     except RuntimeError:
         git(['init'])                      # git < 2.28
         git(['checkout', '-b', 'main'])
-    if remote:
-        git(['remote', 'add', 'origin', remote])
     _git_cfg('admin')
     git(['add', '-A'])
     git(['commit', '-m', 'init: reel review sync repo'])
+    if not quiet:
+        print(f'Initialized sync repo at {SYNC}')
+    return True
+
+
+def cmd_init(remote=None):
+    if SYNC.is_dir():
+        print(f'{SYNC} already exists -- not re-initializing.')
+        return
+    init_local()
     if remote:
+        git(['remote', 'add', 'origin', remote])
+        cfg = config()
+        cfg['remote'] = remote
+        (SYNC / 'config.json').write_text(json.dumps(cfg, indent=2) + '\n',
+                                          encoding='utf-8')
+        git(['add', 'config.json'])
+        git(['commit', '-m', 'sync: set remote'], check=False)
         git(['push', '-u', 'origin', 'main'])
-    print(f'Initialized sync repo at {SYNC}')
     print(f"Next: create accounts with 'python review_team.py account add <name>'.")
 
 
@@ -577,6 +598,8 @@ def main():
     sub.add_parser('status', help="everyone's review progress")
     sub.add_parser('disputes', help='videos reviewers disagree on (table)')
     sub.add_parser('pool', help='print the merged video pool as JSON')
+    sub.add_parser('gui', help='open the browser-based team hub (team_gui.py): '
+                               'setup, accounts, login, sync, progress')
     args = ap.parse_args()
 
     try:
@@ -602,6 +625,10 @@ def main():
             cmd_disputes()
         elif args.cmd == 'pool':
             cmd_pool()
+        elif args.cmd == 'gui':
+            subprocess.Popen([sys.executable, str(ROOT / 'team_gui.py')],
+                             cwd=str(ROOT), start_new_session=True)
+            print('Team hub opened in your browser (team_gui.py).')
     except RuntimeError as exc:
         sys.exit(f'Error: {exc}')
     except KeyboardInterrupt:

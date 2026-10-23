@@ -82,6 +82,32 @@ A private GitHub repo is the hub: only opinions + public metadata travel (no
 videos, frames, or transcripts — IRB rule). The videos stay local and are
 re-downloaded from their URLs when a reviewer needs to watch one.
 
+### The easy way — the team hub GUI (covers everything below)
+
+```bash
+python team_gui.py        # or: python review_team.py gui  ->  http://127.0.0.1:8766
+```
+
+One page for setup + accounts + login + sync + progress + disputes:
+
+1. **Shared repo** — paste the GitHub repo URL once. A single lab GitHub
+   account is enough for the whole team: paste its token, and every member
+   pushes with that same credential — no need to add members as GitHub
+   collaborators. People are told apart by their own account + password
+   (step 2); every git commit is authored with that account name. Leave the
+   token empty to use each machine's own GitHub access (e.g. SSH) instead.
+   The token lives only in this machine's local `.git/config` — it never
+   enters the shared repo.
+2. **Member accounts** — create one username + password per person (only
+   salted PBKDF2 hashes are stored and synced).
+3. **Log in** — each member logs in with their own password; the page pulls
+   the latest team state and can open the review queue for you.
+4. **Sync** — pull before reviewing / push after (the review queue also
+   auto-pushes after every decision).
+5. **Disputes** — the videos reviewers disagree on, in one table.
+
+### The command-line way (same functions)
+
 One-time setup, first machine (private repo, e.g. under KIRRAWA):
 
 ```bash

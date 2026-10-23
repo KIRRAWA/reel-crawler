@@ -30,6 +30,12 @@ With `--frame-interval 5 --vision-batch 0 --speech-model base` on an Apple Silic
 - `review_gui.py` — local keyboard queue at http://127.0.0.1:8765: `g` approve, `w` reject, `r` choose a category (keys 1-12), `u` undo, arrow keys focus frames. Decisions write back to the SQLite store with an audit trail and regenerate every CSV plus analysis.html.
 - `review_download.py` — list items by status, download selected ones fully into `review_videos/`, and record verdicts from the command line (`--approve` / `--reject` / `--category`).
 
+**New multi-reviewer team sync (every member reviews every video)**
+- `review_team.py` — per-member accounts (salted PBKDF2 hashes only, never plaintext), login sessions, per-reviewer append-only opinions (undo adds a tombstone, nothing is overwritten), review progress, and dispute tables. A nested `sync_repo/` git repo is the hub: only opinions + public metadata travel (no videos, frames, or transcripts — IRB rule), pulled before reviewing and pushed after every decision.
+- `team_gui.py` — browser-based team hub at http://127.0.0.1:8766 (`python team_gui.py`, or `python review_team.py gui`): shared-repo setup, account creation, password login, sync pull/push, progress, and disputes. One GitHub account can serve the whole team — paste its token once and every member pushes with that credential; members are told apart by their own account + password, and each git commit is authored with that account name, so no per-member GitHub collaborators are needed.
+- `feed_collector.py` defaults to `--llm off`: all-human review, opt-in LLM assistance. Collection runs auto-push new items when team sync is set up (silently skipped when offline).
+- LLM review can be toggled per run (`--llm on`), and every opinion — human or LLM — is kept separately per reviewer.
+
 **Repository hygiene**
 - Added `.gitignore` (browser session, venv, local datasets, frame evidence, downloaded videos).
 - The previously committed `instagram-session/` folder is removed from this branch's tip. **The login data still exists in the original main history — treat that account's session as compromised and log in again.**
