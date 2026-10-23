@@ -173,6 +173,22 @@ def main():
         import feed_collector as f
         f.Store(args.store).export()
         print('Verdicts saved; CSVs and analysis.html regenerated.')
+        # Team mode: mirror the verdicts into the shared repo (opinions are
+        # kept even for items missing from this machine's local store).
+        try:
+            import review_team as rt
+            if rt.SYNC.is_dir() and rt.session_user():
+                user = rt.session_user()
+                for c in args.approve:
+                    rt.record_opinion(user, f'https://www.instagram.com/reel/{c}/',
+                                      'approve', args.category or '')
+                for c in args.reject:
+                    rt.record_opinion(user, f'https://www.instagram.com/reel/{c}/',
+                                      'reject')
+                rt.sync_push('review', quiet=True)
+                print('Team sync: verdicts pushed to the shared repo.')
+        except Exception as exc:
+            print(f'Team sync skipped ({type(exc).__name__}: {exc})')
         return
 
     rows = rows_for(args.store, args.status, args.code)

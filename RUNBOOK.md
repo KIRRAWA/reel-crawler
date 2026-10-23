@@ -60,6 +60,10 @@ python feed_collector.py --rescreen --target 100 --output feed_candidates_mine \
 Rescreen only retries items whose last attempt produced no result
 (`not_screened` / `screening_failed:*`), so an interrupted run resumes safely.
 
+Human-only screening is the default (`--llm off`): the vision model is never
+called and every item lands in the review queue. Add `--llm on` to let the
+model pre-screen, with humans reviewing only what the model flags.
+
 ## 6. Human review (optional, recommended)
 
 ```bash
@@ -71,6 +75,48 @@ python review_capture.py --store feed_candidates_mine --frames review_frames
 python review_gui.py --store feed_candidates_mine --frames review_frames
 # keys: g approve · w reject · r choose category (1-12) · u undo · arrows focus frames
 ```
+
+## 6b. Multi-reviewer team sync (every member reviews every video)
+
+A private GitHub repo is the hub: only opinions + public metadata travel (no
+videos, frames, or transcripts — IRB rule). The videos stay local and are
+re-downloaded from their URLs when a reviewer needs to watch one.
+
+One-time setup, first machine (private repo, e.g. under KIRRAWA):
+
+```bash
+python review_team.py init git@github.com:KIRRAWA/<private-repo>.git
+python review_team.py account add david      # prompts for a password
+python review_team.py login david
+```
+
+Every other machine:
+
+```bash
+git clone git@github.com:KIRRAWA/<private-repo>.git sync_repo
+python review_team.py account add <member>   # add that machine's member
+python review_team.py login <member>
+```
+
+Every reviewer's daily loop:
+
+```bash
+python review_team.py sync pull              # fetch everyone's new videos + opinions
+python feed_collector.py --rescreen --target 100 --output feed_candidates_mine
+python review_gui.py --store feed_candidates_mine --frames review_frames
+#   -> team mode: the queue is the whole pool minus YOUR opinions;
+#      every g/w/r/u decision is pushed to GitHub immediately
+python review_team.py status                 # everyone's progress
+python review_team.py disputes               # table of videos reviewers disagree on
+```
+
+Notes:
+- `feed_collector.py` auto-pushes new items after every run (skipped silently
+  on failure, so offline collection still works).
+- `review_gui.py` auto-pulls at startup and pushes after every decision.
+- Undo rewrites the opinion file; historical opinion lines are kept.
+- Disputes = a video where reviewers disagree (reject vs accept, or different
+  categories).
 
 ## 7. Download the video pool / command-line verdicts
 
@@ -112,12 +158,14 @@ git pull fork review-toolchain
 | `--vision-batch N` | frames per vision-model call (0 = whole video in one call) | 1 |
 | `--speech-model NAME` | faster-whisper model (base is faster on CPU) | small |
 | `--workers N` | parallel items during --rescreen | 2 |
+| `--llm on/off` | vision-model pre-screening during --rescreen | off (human-only) |
 | `--output DIR` | dataset folder | feed_candidates |
 | `--profile DIR` | browser login profile | instagram-session |
 | `--channel NAME` | msedge / chrome / chromium | msedge |
 
 Presets: strict = all defaults; fast = `--frame-interval 5 --vision-batch 0
---speech-model base --workers 3`.
+--speech-model base --workers 3`; human-only = `--llm off` (the default:
+every item goes to the review queue, the vision model never runs).
 
 ## Discipline
 

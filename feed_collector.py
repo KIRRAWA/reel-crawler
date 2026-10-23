@@ -334,8 +334,10 @@ def vision_review(frames, caption, audio, model, batch=1):
     return results
 
 
-def preflight(model):
+def preflight(model,require_vision=True):
     for name in ['playwright.sync_api','yt_dlp','av','numpy','PIL','requests','faster_whisper']: importlib.import_module(name)
+    if not require_vision:
+        return  # --llm off: the vision model is never called; dependencies only
     import requests
     r=requests.post('http://127.0.0.1:11434/api/show',json={'model':model},timeout=15)
     r.raise_for_status()
@@ -353,6 +355,12 @@ def screen_item(item, context, asr, args, store, cookie_file=None):
             print('  Analyzing audio...',flush=True)
             audio=analyze_audio(path,asr)
             if audio['status']=='non_english': status,reason='excluded','non_english_audio'
+            elif getattr(args,'llm','off')=='off':
+                # Human-only screening (default): the LLM never sees the video.
+                # decide() with no visual evidence returns
+                # ('review','no_visual_evidence'), so every item lands in the
+                # human review queue.
+                status,reason=decide(audio,[])
             else:
                 visuals=vision_review(frames,item.get('caption',''),audio,args.vision_model,args.vision_batch)
                 category=Counter(v['category'] for v in visuals).most_common(1)[0][0]
@@ -503,6 +511,7 @@ def main():
     ap.add_argument('--channel',default='msedge',help='Browser channel: msedge (real Edge, default), chrome, or chromium (bundled)')
     ap.add_argument('--vision-model',default='qwen2.5vl:3b'); ap.add_argument('--speech-model',default='small')
     ap.add_argument('--workers',type=int,default=2,help='Items screened in parallel during --rescreen; overlaps downloads/transcription with vision calls')
+    ap.add_argument('--llm',choices=('on','off'),default='off',help='During --rescreen: on = vision model pre-screens (humans review flagged items only), off = human-only screening, the LLM never runs (default)')
     args=ap.parse_args()
     if min(args.target,args.scrolls,args.max_seconds)<1 or args.max_seconds>180 or args.delay<1 or args.frame_interval<0.5 or args.vision_batch<0 or args.workers<1:
         ap.error('Counts must be positive, max-seconds <=180, delay >=1, frame-interval >=0.5 and vision-batch >=0.')
@@ -511,17 +520,20 @@ def main():
     if args.login:
         run(args,None,None,None,{}); return
     if args.check:
-        try: preflight(args.vision_model)
+        try: preflight(args.vision_model,require_vision=args.llm=='on')
         except Exception as exc:
             print(f'Setup not ready ({type(exc).__name__}). Read README.md. Install feed dependencies, start Ollama and pull '+args.vision_model); raise SystemExit(1)
-        print('Dependencies and local vision model are ready. Speech model downloads on first --rescreen run.')
+        if args.llm=='on': print('Dependencies and local vision model are ready. Speech model downloads on first --rescreen run.')
+        else: print('Dependencies ready. --llm off: human-only screening, the vision model is not used.')
         return
     store=Store(args.output)
     if args.analyze_only: store.export(); store.db.close(); return
     asr=None
     if args.rescreen:
         try:
-            preflight(args.vision_model)
+            preflight(args.vision_model,require_vision=args.llm=='on')
+            if args.llm=='off':
+                print('--llm off: human-only screening. Every item goes to the review queue; the vision model is never called.',flush=True)
             from faster_whisper import WhisperModel
             print('Loading local speech model (first use downloads model files)...',flush=True)
             asr=WhisperModel(args.speech_model,device='cpu',compute_type='int8')
@@ -546,6 +558,16 @@ def main():
         if not args.rescreen:
             print('Screening is disabled during collection. To screen the collected items offline (no browser, no feed activity):')
             print(f'  python feed_collector.py --rescreen --target {counters["new_unique"]} --output {args.output}')
+        # Auto team sync (review_team.py): push the metadata snapshot and any
+        # new opinions to the shared repo. Never breaks collection on failure.
+        try:
+            import review_team as rt
+            if rt.SYNC.is_dir() and rt.session_user():
+                rt.export_items(rt.session_user())
+                rt.sync_push('collect' if not args.rescreen else 'rescreen',quiet=True)
+                print('Team sync: local collection pushed to the shared repo.',flush=True)
+        except Exception as exc:
+            print(f'Team sync skipped ({type(exc).__name__}: {exc})',flush=True)
     raise SystemExit(code)
 
 if __name__=='__main__': main()

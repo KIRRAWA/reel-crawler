@@ -8,8 +8,12 @@ __pycache__/
 feed_candidates/
 feed_candidates_new/
 feed_candidates_mine/
+# Stray root-level collector DB (local testing output) — local only
+/feed_collection.sqlite
 # Frame evidence for human review (may contain third-party faces -- local only)
 review_frames/
 review_videos/
+# Multi-reviewer team sync (nested git repo; never tracked by the outer repo)
+sync_repo/
 # macOS
 .DS_Store

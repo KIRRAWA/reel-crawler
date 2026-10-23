@@ -14,6 +14,11 @@ plus analysis.html are regenerated after every decision.
 
 Items without captured frames still appear, so you can open the reel link
 and decide from the video itself.
+
+Team mode (review_team.py): when a sync repo exists and someone is logged
+in, the queue becomes the merged pool minus your own opinions, and every
+decision is recorded in sync_repo/opinions/<you>.jsonl and pushed to the
+shared repo immediately.
 """
 
 import argparse
@@ -27,8 +32,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import feed_collector as f
+import review_team as rt
 
-STATE = {'store': 'feed_candidates_mine', 'frames': 'review_frames', 'undo': []}
+STATE = {'store': 'feed_candidates_mine', 'frames': 'review_frames', 'undo': [],
+         'team_user': None}
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review queue</title>
@@ -124,8 +131,12 @@ document.addEventListener('keydown',e=>{
  else if(e.key==='ArrowLeft'){SEL=Math.max(SEL-1,0);select();}
 });
 api('/api/queue').then(q=>{
+ if(q.team){const t=document.createElement('span');t.id='team';t.className='muted';$('top').appendChild(t);
+  $('team').textContent=q.team.user+' · reviewed '+q.team.done+'/'+q.team.pool;}
  if(q.items.length)load(q.items[0].code);
- else document.body.innerHTML='<div class="done">No review items.<br>If the queue should not be empty, run: python review_capture.py</div>';});
+ else document.body.innerHTML='<div class="done">'+(q.team
+  ?('All '+q.team.pool+' videos reviewed by '+q.team.user+' ✓')
+  :'No review items.<br>If the queue should not be empty, run: python review_capture.py')+'</div>';});
 </script></body></html>'''
 
 
@@ -134,6 +145,14 @@ def shortcode(url):
 
 
 def queue():
+    user = STATE.get('team_user')
+    if user:
+        # Team mode: the queue is the merged pool minus MY opinions.
+        pool = rt.pool()
+        done = rt.latest_opinions(user)
+        urls = [u for u in pool if u not in done]
+        urls.sort(key=lambda u: pool[u].get('first_seen_utc') or '')
+        return [pool[u].get('code') or shortcode(u) for u in urls]
     db = sqlite3.connect(Path(STATE['store']) / 'feed_collection.sqlite')
     db.row_factory = sqlite3.Row
     rows = [dict(r) for r in db.execute(
@@ -146,6 +165,19 @@ def item_data(code):
     path = Path(STATE['frames']) / code / 'meta.json'
     if path.exists():
         item = json.loads(path.read_text(encoding='utf-8'))
+    elif STATE.get('team_user'):
+        # No local frame evidence: build the card from the team pool metadata.
+        entry = rt.pool().get(f'https://www.instagram.com/reel/{code}/') or {}
+        item = {'url': f'https://www.instagram.com/reel/{code}/',
+                'username': entry.get('username') or '',
+                'caption': entry.get('caption') or '',
+                'likes': entry.get('likes'),
+                'status': entry.get('model_status') or 'review',
+                'reason': entry.get('model_reason') or 'no_frame_evidence',
+                'category': entry.get('model_category') or 'other',
+                'audio_status': entry.get('audio_status'),
+                'transcript': '', 'duration_seconds': entry.get('duration_seconds'),
+                'frames': []}
     else:
         item = {'url': f'https://www.instagram.com/reel/{code}/', 'username': '',
                 'caption': '', 'likes': None, 'status': 'review',
@@ -163,28 +195,57 @@ def refresh_reports():
     s.db.close()
 
 
+_push_failed = False
+
+
+def _team_push():
+    """Push my opinions to the shared repo; print only on state transitions."""
+    global _push_failed
+    try:
+        rt.sync_push('review', quiet=True)
+        if _push_failed:
+            print('Team push recovered.', flush=True)
+        _push_failed = False
+    except Exception as exc:
+        if not _push_failed:
+            print(f'Team push failed ({type(exc).__name__}: {exc}) -- '
+                  'will retry on the next decision.', flush=True)
+        _push_failed = True
+
+
 def apply(code, action, category):
+    user = STATE.get('team_user')
+    url = f'https://www.instagram.com/reel/{code}/'
+    old = None
     db = sqlite3.connect(Path(STATE['store']) / 'feed_collection.sqlite')
     db.row_factory = sqlite3.Row
-    url = f'https://www.instagram.com/reel/{code}/'
     row = db.execute('SELECT status, reason, category FROM feed_items WHERE url=?',
                      (url,)).fetchone()
-    if row is None:
-        db.close()
-        return False
-    old = (row['status'], row['reason'], row['category'])
-    if action == 'reject':
-        new = ('excluded', f'human_excluded_after_review (model: {old[1]})', old[2])
-    elif action == 'category':
-        new = ('screened_candidate',
-               f'human_approved_with_category (model: {old[1]})', category or old[2])
-    else:
-        new = ('screened_candidate', f'human_approved_after_review (model: {old[1]})',
-               old[2])
-    db.execute('UPDATE feed_items SET status=?, reason=?, category=? WHERE url=?',
-               (*new, url))
-    db.commit()
+    if row is not None:
+        old = (row['status'], row['reason'], row['category'])
+        if action == 'reject':
+            new = ('excluded', f'human_excluded_after_review (model: {old[1]})', old[2])
+        elif action == 'category':
+            new = ('screened_candidate',
+                   f'human_approved_with_category (model: {old[1]})', category or old[2])
+        else:
+            new = ('screened_candidate', f'human_approved_after_review (model: {old[1]})',
+                   old[2])
+        db.execute('UPDATE feed_items SET status=?, reason=?, category=? WHERE url=?',
+                   (*new, url))
+        db.commit()
     db.close()
+    if user:
+        # Team mode: the opinion is the record of truth; the local sqlite row
+        # may not even exist (video collected by another member).
+        op = rt.record_opinion(user, url, action, category or '')
+        STATE['undo'].append((code, old, op['id']))
+        _team_push()
+        if old is not None:
+            refresh_reports()
+        return True
+    if old is None:
+        return False
     STATE['undo'].append((code, old))
     refresh_reports()
     return True
@@ -193,13 +254,19 @@ def apply(code, action, category):
 def undo():
     if not STATE['undo']:
         return None
-    code, old = STATE['undo'].pop()
-    db = sqlite3.connect(Path(STATE['store']) / 'feed_collection.sqlite')
-    db.execute('UPDATE feed_items SET status=?, reason=?, category=? WHERE url=?',
-               (*old, f'https://www.instagram.com/reel/{code}/'))
-    db.commit()
-    db.close()
-    refresh_reports()
+    entry = STATE['undo'].pop()
+    code, old = entry[0], entry[1]
+    user = STATE.get('team_user')
+    if user and len(entry) == 3:
+        rt.remove_opinion(user, entry[2])
+        _team_push()
+    if old is not None:
+        db = sqlite3.connect(Path(STATE['store']) / 'feed_collection.sqlite')
+        db.execute('UPDATE feed_items SET status=?, reason=?, category=? WHERE url=?',
+                   (*old, f'https://www.instagram.com/reel/{code}/'))
+        db.commit()
+        db.close()
+        refresh_reports()
     return code
 
 
@@ -228,7 +295,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(PAGE.encode(), 'text/html; charset=utf-8')
             return
         if path == '/api/queue':
-            self.send_json({'items': [{'code': c} for c in queue()]})
+            resp = {'items': [{'code': c} for c in queue()]}
+            user = STATE.get('team_user')
+            if user:
+                resp['team'] = {'user': user,
+                                'done': len(rt.latest_opinions(user)),
+                                'pool': len(rt.pool())}
+            self.send_json(resp)
             return
         if path == '/api/item':
             code = parse_qs(urlparse(self.path).query).get('code', [''])[0]
@@ -268,6 +341,15 @@ def main():
     args = ap.parse_args()
     STATE['store'] = args.store
     STATE['frames'] = args.frames
+    STATE['team_user'] = rt.session_user() if rt.SYNC.is_dir() else None
+    if STATE['team_user']:
+        try:
+            rt.sync_pull(quiet=True)
+        except Exception as exc:
+            print(f'Team pull failed ({type(exc).__name__}: {exc}) -- continuing with local state.')
+        else:
+            print(f"Team mode: logged in as {STATE['team_user']} -- "
+                  f'{len(rt.pool())} videos in the pool, {len(queue())} left for you.')
 
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     print(f'Review queue: http://127.0.0.1:{args.port}   (store={args.store})')
