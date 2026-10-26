@@ -33,6 +33,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -122,7 +123,7 @@ td.you{font-weight:700}
 <div class="card">
  <h2>3 · Log in on this machine <span class="badge" id="login-badge"></span></h2>
  <div id="login-form">
-  <p class="hint">Logging in also pulls the latest team state from GitHub, so your review queue is always up to date.</p>
+  <p class="hint">Logging in checks your password, then pulls the latest shared state from GitHub, so your review queue is always up to date. If the checkbox is on, the review page opens right after login — if your browser blocks that pop-up, use the manual button above instead.</p>
   <div class="row">
    <div><label for="li-name">Username</label><input type="text" id="li-name"></div>
    <div><label for="li-pw">Password</label><input type="password" id="li-pw"></div>
@@ -140,7 +141,7 @@ td.you{font-weight:700}
 
 <div class="card">
  <h2>4 · Sync <span class="badge" id="sync-badge"></span></h2>
- <p class="hint">Sync: online → this machine = download everyone's latest videos and reviews. Sync: this machine → online = upload yours. The review queue pushes automatically after every decision, so these are mainly for collecting or checking progress.</p>
+ <p class="hint">Sync: online → this machine = download everyone's latest videos and reviews. Sync: this machine → online = upload yours — your reviews AND any new video metadata from your local collection stores (the videos themselves never leave the machine). The review queue pushes automatically after every decision, so these are mainly for collecting or checking progress.</p>
  <button class="act ghost" id="btn-pull">Sync: online → this machine</button>
  <button class="act ghost" id="btn-push">Sync: this machine → online</button>
  <div class="msg" id="sync-msg"></div>
@@ -402,6 +403,18 @@ def _port_open(port):
         s.close()
 
 
+def _wait_port(port, timeout=15.0):
+    """Wait until a server is listening on 127.0.0.1:port (startup takes a few
+    seconds: imports + team pull). Without this, the browser tab opens too
+    early and shows a connection-refused page."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _port_open(port):
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def do_review():
     if not rt.session_user():
         raise RuntimeError('Log in first (step 3).')
@@ -410,6 +423,10 @@ def do_review():
         subprocess.Popen([sys.executable, str(rt.ROOT / 'review_gui.py'),
                           '--no-browser'],
                          cwd=str(rt.ROOT), start_new_session=True)
+        if not _wait_port(REVIEW_PORT):
+            raise RuntimeError('The review queue took too long to start -- '
+                               'click "Open review queue" again (it may just '
+                               'need a moment).')
     return {'launch': launch, 'port': REVIEW_PORT}
 
 

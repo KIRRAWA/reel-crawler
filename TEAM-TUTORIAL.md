@@ -88,8 +88,11 @@ are stored only as salted PBKDF2 hashes and synced to GitHub as hashes —
 plaintext never leaves the machine. The table shows everyone's review counts.
 
 **3 · Log in on this machine**
-Log in with your own account. If "Open the review queue right after login" is
-checked, the review page (http://127.0.0.1:8765) opens automatically. The
+Log in with your own account — the hub checks your password, then pulls the
+latest shared state from GitHub, so your review queue is always up to date.
+If "Open the review queue right after login" is
+checked, the review page (http://127.0.0.1:8765) opens automatically once it
+is ready. The
 checkbox only appears on the login form — once you are logged in, card 3
 shows an **Open review queue →** button instead (same effect), and the page
 header keeps the same button at all times. If your browser blocks the
@@ -126,7 +129,8 @@ python3 team_gui.py            # the hub opens
 - **Card 4 · Sync** — click **Sync: online → this machine** before you start
   (login does this automatically) so you see everything collected and
   reviewed since yesterday. **Sync: this machine → online** uploads your
-  changes.
+  changes — your reviews and any new video metadata from your local
+  collection stores (the videos themselves never leave the machine).
 - **Card 3** — click **Open review queue** (or log in with the checkbox).
 - In the review queue, keyboard only:
 
@@ -216,6 +220,12 @@ queue retries the push on every decision).
 Every push pulls with rebase first; a conflicting push fails and is retried
 on the next decision. The worst case is re-running one decision — opinions
 are append-only, so nothing is lost.
+
+**The review page did not open right after login**
+Your browser may have blocked the automatic pop-up — click **Open review queue →**
+(card 3 or the page header); the manual link always works and opens in the
+same tab if needed. The hub now also waits for the review page to be ready
+before opening it, so you will not get a blank tab.
 
 **I reviewed a video but it shows as unreviewed**
 Run **Sync · pull** — the hub shows local state; pull refreshes it with

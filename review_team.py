@@ -407,12 +407,19 @@ def sync_pull(quiet=False):
 
 
 def sync_push(activity='review', quiet=False):
-    """Commit this machine's changes (items/opinions/accounts) and push."""
+    """Commit this machine's changes (items/opinions/accounts) and push.
+
+    Local collection stores are exported into items/ first, so every push
+    (manual sync, review decision, end of a collection run) carries the
+    newest collected metadata up to the shared repo. Videos/frames/audio
+    stay local."""
     if not SYNC.is_dir() or not (SYNC / '.git').is_dir():
         raise RuntimeError('sync repo not initialized -- '
                            'run: python review_team.py init <remote-url>')
     user = session_user() or 'anonymous'
     _git_cfg(user)
+    if user != 'anonymous':
+        export_items(user)
     git(['add', '-A'])
     r = git(['status', '--porcelain'], check=False)
     if r.stdout.strip():
