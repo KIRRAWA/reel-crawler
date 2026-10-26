@@ -43,6 +43,7 @@ import review_team as rt
 
 REVIEW_PORT = 8765
 SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
+PAGE_VERSION = '2026-10-26.3'                 # bump to make stale tabs show a reload hint
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -83,7 +84,7 @@ td.you{font-weight:700}
  <span class="muted" id="hdr">localhost only</span>
  <span style="flex:1"></span>
  <span class="muted" id="who"></span>
- <a id="btn-review-top" class="act" style="display:none;padding:5px 14px;font-size:13px" target="_blank">Open review queue →</a>
+ <a id="btn-review-top" class="act" href="http://127.0.0.1:8765/" style="display:none;padding:5px 14px;font-size:13px" target="_blank">Open review queue →</a>
  <button id="btn-logout" style="display:none">Log out</button>
 </header>
 <div id="banner" style="display:none">First run: set up the shared repo (step 1), create the member accounts (step 2), then each person logs in with their own password (step 3).</div>
@@ -133,7 +134,7 @@ td.you{font-weight:700}
  </div>
  <div id="login-done" style="display:none">
   <div class="msg ok" id="login-who"></div>
-  <a id="btn-review" class="act" target="_blank">Open review queue →</a>
+  <a id="btn-review" class="act" href="http://127.0.0.1:8765/" target="_blank">Open review queue →</a>
   <button class="act ghost" id="btn-passwd">Change my password</button>
  </div>
  <div class="msg" id="login-msg"></div>
@@ -156,6 +157,7 @@ td.you{font-weight:700}
 </div>
 <script>
 const $=id=>document.getElementById(id);
+const PAGEV='2026-10-26.3';
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
@@ -164,7 +166,9 @@ async function refresh(){
  const s=await api('/api/state');
  if(s.error){msg('setup-msg',s.error);return;}
  $('hdr').textContent='pool: '+s.pool_total+' videos · stores: '+(s.stores.join(', ')||'none');
- $('banner').style.display=s.initialized?'none':'';
+ if(s.version&&s.version!==PAGEV){$('banner').style.display='';
+  $('banner').textContent='The hub was updated — reload this page (Cmd/Ctrl+Shift+R) to use the new version.';}
+ else $('banner').style.display=s.initialized?'none':'';
  $('repo-badge').textContent=s.initialized?(s.remote?'connected':'no remote yet'):'not initialized';
  const saved=s.saved||{};
  if(!$('repo-url').value)$('repo-url').value=saved.url||s.remote||'';
@@ -219,8 +223,11 @@ $('btn-logout').onclick=async()=>{await api('/api/logout');$('li-pw').value='';r
 async function manualOpen(e){
  if(e.ctrlKey||e.metaKey||e.button===1){ensureReview();return;}   // native open (server is kept running)
  e.preventDefault();
- const q=await api('/api/review');
- if(q.error){msg('login-msg',q.error);return;}
+ msg('login-msg','Opening review queue…');
+ try{
+  const q=await api('/api/review');
+  if(q.error){msg('login-msg','Could not open the review queue: '+q.error);return;}
+ }catch(err){}    // hub unreachable? try the direct link anyway
  if(!tryOpen(RQ))window.location.href=RQ;    // pop-up blocked: open in this tab (Back returns here)
 }
 $('btn-review').onclick=manualOpen;
@@ -270,6 +277,7 @@ def state():
                                'utc': o['utc']} for o in r['opinions']]}
                 for r in rt.dispute_rows(p)] if p else []
     return {'initialized': rt.SYNC.is_dir() and (rt.SYNC / '.git').is_dir(),
+            'version': PAGE_VERSION,
             'remote': rt.config().get('remote', ''),
             'saved': load_secrets(),
             'session': sess,
