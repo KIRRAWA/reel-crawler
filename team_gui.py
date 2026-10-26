@@ -77,6 +77,7 @@ td.you{font-weight:700}
  <span class="muted" id="hdr">localhost only</span>
  <span style="flex:1"></span>
  <span class="muted" id="who"></span>
+ <button id="btn-review-top" style="display:none">Open review queue →</button>
  <button id="btn-logout" style="display:none">Log out</button>
 </header>
 <div id="banner" style="display:none">First run: set up the shared repo (step 1), create the member accounts (step 2), then each person logs in with their own password (step 3).</div>
@@ -171,6 +172,7 @@ async function refresh(){
  if(loggedIn)$('login-who').textContent='You are logged in as '+s.session+' on this machine.';
  $('who').textContent=loggedIn?s.session:'';
  $('btn-logout').style.display=loggedIn?'':'none';
+ $('btn-review-top').style.display=loggedIn?'':'none';
  $('sync-badge').textContent=s.initialized?(s.remote?'ready':'no remote'):'needs setup';
  const dt=$('dis-table').querySelector('tbody');dt.innerHTML='';
  s.disputes.forEach(d=>{const tr=document.createElement('tr');
@@ -199,8 +201,10 @@ async function afterLogin(r){
 $('btn-login').onclick=async()=>afterLogin(await api('/api/login',{name:$('li-name').value.trim(),pw:$('li-pw').value}));
 $('li-pw').addEventListener('keydown',async e=>{if(e.key==='Enter')afterLogin(await api('/api/login',{name:$('li-name').value.trim(),pw:$('li-pw').value}));});
 $('btn-logout').onclick=async()=>{await api('/api/logout');$('li-pw').value='';refresh();};
-$('btn-review').onclick=async()=>{const q=await api('/api/review');
- if(q.error)msg('login-msg',q.error);else setTimeout(()=>window.open('http://127.0.0.1:'+q.port,'_blank'),q.launch?1400:0);};
+async function openReview(){const q=await api('/api/review');
+ if(q.error)msg('login-msg',q.error);else setTimeout(()=>window.open('http://127.0.0.1:'+q.port,'_blank'),q.launch?1400:0);}
+$('btn-review').onclick=openReview;
+$('btn-review-top').onclick=openReview;
 $('btn-passwd').onclick=async()=>{
  const old=prompt('Current password:'),nu=prompt('New password (at least 4 characters):');
  if(old===null||nu===null)return;
@@ -385,6 +389,7 @@ class Handler(BaseHTTPRequestHandler):
             body = PAGE.encode()
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             self.wfile.write(body)

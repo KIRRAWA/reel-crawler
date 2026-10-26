@@ -86,7 +86,10 @@ plaintext never leaves the machine. The table shows everyone's review counts.
 
 **3 · Log in on this machine**
 Log in with your own account. If "Open the review queue right after login" is
-checked, the review page (http://127.0.0.1:8765) opens automatically.
+checked, the review page (http://127.0.0.1:8765) opens automatically. The
+checkbox only appears on the login form — once you are logged in, card 3
+shows an **Open review queue →** button instead (same effect), and the page
+header keeps the same button at all times.
 
 That is the entire setup. The other cards are used every day (section 5).
 
