@@ -8,6 +8,8 @@ Serves a local page listing every review item that has frame evidence
   r      choose a category (keys 1-12 or click) and approve with it
   u      undo the last decision
   <- / -> move frame focus
+  p / n  previous / next video (walks the whole list, like an exam)
+  s      submit: upload all decisions to the shared repo in one go
 Decisions are written back into <store>/feed_collection.sqlite (the model's
 original verdict is preserved inside the new reason for audit) and the CSVs
 plus analysis.html are regenerated after every decision.
@@ -16,9 +18,11 @@ Items without captured frames still appear, so you can open the reel link
 and decide from the video itself.
 
 Team mode (review_team.py): when a sync repo exists and someone is logged
-in, the queue becomes the merged pool minus your own opinions, and every
-decision is recorded in sync_repo/opinions/<you>.jsonl and pushed to the
-shared repo immediately.
+in, the queue becomes the merged pool minus your own opinions. The page
+shows a sidebar with your answered and unanswered videos, lets you jump
+back and change earlier decisions, and uploads everything to the shared
+repo only when you press Submit (s) -- exam style. Changing an earlier
+decision appends a new line (latest wins), so nothing is ever lost.
 """
 
 import argparse
@@ -35,7 +39,7 @@ import feed_collector as f
 import review_team as rt
 
 STATE = {'store': 'feed_candidates_mine', 'frames': 'review_frames', 'undo': [],
-         'team_user': None}
+         'team_user': None, 'draft': set()}
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review queue</title>
@@ -54,25 +58,68 @@ header .muted{color:#5b6b80}
 .card.sel{outline:3px solid #2f6fed;outline-offset:2px}
 .card.flagged{border-color:#e06c4f;box-shadow:inset 0 0 0 1px #e06c4f}
 .tag{display:inline-block;background:#e06c4f;color:#fff;border-radius:4px;padding:0 5px;margin-right:4px;font-size:11px}
-#help{position:fixed;bottom:0;left:0;right:0;background:#101826;color:#cfd8e6;padding:10px 22px;font-size:13px}
+#help{position:fixed;bottom:0;left:0;right:0;background:#101826;color:#cfd8e6;padding:10px 22px;font-size:13px;z-index:9}
 kbd{background:#243040;border-radius:4px;padding:1px 7px;margin:0 2px}
-#modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center}
+#modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:10}
 #modal.hidden{display:none}
 #modalbox{background:#fff;border-radius:12px;padding:18px 22px;max-width:640px}
 #modalbox .cats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 #modalbox button{padding:10px;font-size:14px;border:1px solid #cfd8e6;border-radius:8px;background:#f7f9fc;cursor:pointer}
 #modalbox button:hover{background:#e8f0fe}
-.done{padding:60px;text-align:center;font-size:18px}
+.done{padding:40px;text-align:center;font-size:18px}
+/* exam-style sidebar */
+#side{position:fixed;top:0;bottom:52px;left:0;width:280px;background:#fff;border-right:1px solid #e2e8f0;overflow-y:auto;z-index:8;display:flex;flex-direction:column}
+#side.hidden{display:none}
+#side .sidehead{padding:14px 14px 10px;border-bottom:1px solid #eef2f8}
+#side .sidehead .t{font-weight:700;font-size:14px}
+#side .sidehead .m{font-size:12px;color:#5b6b80;margin-top:2px}
+#btn-submit{display:block;width:100%;background:#1a7f37;color:#fff;border:none;border-radius:8px;padding:10px;font:600 14px system-ui;cursor:pointer;margin-top:10px}
+#btn-submit:disabled{opacity:.55;cursor:default}
+#side-submsg{margin-top:8px;font-size:12px;min-height:16px}
+#side .sec{font-size:12px;font-weight:700;color:#5b6b80;padding:10px 14px 4px;letter-spacing:.4px}
+.selist{padding:0 8px 8px;flex-shrink:0}
+.se{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px}
+.se:hover{background:#f0f4fa}
+.se.cur{background:#e8f0fe;outline:1px solid #2f6fed}
+.se .c{font:600 12px ui-monospace,monospace;color:#1c2330}
+.se .v{flex:1;text-align:right;font-size:11px;color:#5b6b80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.se .v.pass{color:#1a7f37}
+.se .v.rej{color:#b3261e}
+.se .dot{width:8px;height:8px;border-radius:50%;background:#e8890c;flex-shrink:0}
+.sidefoot{border-top:1px solid #eef2f8;padding:10px 14px;display:flex;gap:8px}
+.sidefoot button{flex:1;padding:8px;font:600 13px system-ui;border:1px solid #c6d2e2;border-radius:8px;background:#f7f9fc;cursor:pointer}
+#mainwrap{margin-left:280px}
+body.no-side #mainwrap{margin-left:0}
+body.no-side #side{display:none}
 </style></head>
 <body>
+<div id="side">
+ <div class="sidehead">
+  <div class="t">Review list</div>
+  <div class="m" id="side-prog"></div>
+  <button id="btn-submit">Submit all decisions</button>
+  <div id="side-submsg"></div>
+ </div>
+ <div class="sec">Not decided yet (<span id="n-pending">0</span>)</div>
+ <div class="selist" id="list-pending"></div>
+ <div class="sec">Decided (<span id="n-decided">0</span>)</div>
+ <div class="selist" id="list-decided"></div>
+ <div style="flex:1"></div>
+ <div class="sidefoot">
+  <button id="btn-prev">← Prev</button>
+  <button id="btn-next">Next →</button>
+ </div>
+</div>
+<div id="mainwrap">
 <header id="top"><span id="prog" class="muted"></span><span id="code" class="code"></span><span id="usr" class="muted"></span><span id="likes" class="muted"></span><span id="dur" class="muted"></span><span id="audio" class="muted"></span><a id="vlink" target="_blank" class="muted">open reel ↗</a></header>
 <div id="meta"><div id="caption"></div><div id="reason"></div><div id="transcript" class="transcript"></div></div>
 <div id="frames"></div>
-<div id="help">Keys: <kbd>g</kbd> approve &middot; <kbd>w</kbd> reject &middot; <kbd>r</kbd> choose category (<kbd>1</kbd>-<kbd>12</kbd>) &middot; <kbd>u</kbd> undo &middot; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> focus frame</div>
+</div>
+<div id="help">Keys: <kbd>g</kbd> approve &middot; <kbd>w</kbd> reject &middot; <kbd>r</kbd> choose category (<kbd>1</kbd>-<kbd>12</kbd>) &middot; <kbd>u</kbd> undo &middot; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> focus frame &middot; <kbd>p</kbd>/<kbd>n</kbd> prev/next video &middot; <kbd>s</kbd> submit</div>
 <div id="modal" class="hidden"><div id="modalbox"><h3>Choose a category</h3><div class="cats" id="cats"></div></div></div>
 <script>
 const CATS=['comedy','animals','food','sports_fitness','travel_nature','everyday_life','art_diy','science_technology','beauty_fashion','music_dance','gaming','other'];
-let CUR=null,SEL=0;
+let CUR=null,SEL=0,ORDER=[],DONE={},DRAFT=new Set(),TEAM=false;
 const $=id=>document.getElementById(id);
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -83,10 +130,12 @@ function flagNames(m){const out=[];if(!m)return out;
  if(m.us_audience_context!=='suitable')out.push('context?');
  if((m.confidence||0)<0.8)out.push('conf '+m.confidence);
  return out;}
+function verdictLabel(v){if(v==='approve')return '✓ pass';if(v==='reject')return '✗ reject';return v||'';}
 async function load(code){
  const d=await api('/api/item?code='+encodeURIComponent(code));
  CUR=d;SEL=0;
- $('prog').textContent='item '+(d.index+1)+' / '+d.total+' · ';
+ const pos=ORDER.indexOf(code);
+ $('prog').textContent='video '+(pos>=0?pos+1:0)+' / '+ORDER.length+' · ';
  $('code').textContent=code;
  $('usr').textContent='@'+(d.item.username||'?');
  $('likes').textContent=((d.item.likes==null?'?':d.item.likes)+' likes');
@@ -109,14 +158,54 @@ async function load(code){
   fr.appendChild(card);});
  if(!(d.item.frames||[]).length){
   fr.innerHTML='<div class="info">No frame evidence captured yet — run review_capture.py, or open <a href="'+esc(d.item.url)+'" target="_blank">the reel</a> and decide from the video.</div>';}
- select();}
+ select();markCur();}
 function select(){const cards=document.querySelectorAll('.card');cards.forEach((c,i)=>c.classList.toggle('sel',i===SEL));const c=cards[SEL];if(c)c.scrollIntoView({block:'nearest'});}
-async function decide(action,category){const r=await api('/api/decide',{code:CUR.code,action,category});
- if(r.next)load(r.next);else document.body.innerHTML='<div class="done">Queue complete ✓</div>';}
+function markCur(){document.querySelectorAll('#side .se').forEach(el=>el.classList.toggle('cur',el.dataset.code===CUR.code));}
+function seEntry(code,verdict){
+ const d=document.createElement('div');d.className='se';d.dataset.code=code;
+ d.innerHTML='<span class="c">'+esc(code)+'</span><span class="v '+(verdict==='approve'?'pass':verdict==='reject'?'rej':'')+'">'+esc(verdictLabel(verdict))+'</span>'
+  +(DRAFT.has(code)?'<span class="dot" title="not submitted yet"></span>':'');
+ d.onclick=()=>load(code);
+ return d;}
+function refreshList(){
+ const pending=$('list-pending'),decided=$('list-decided');
+ pending.innerHTML='';decided.innerHTML='';
+ let np=0,nd=0;
+ ORDER.forEach(code=>{
+  const v=DONE[code]||'';
+  const el=seEntry(code,v);
+  if(v){decided.appendChild(el);nd++;}
+  else{pending.appendChild(el);np++;}});
+ $('n-pending').textContent=np;$('n-decided').textContent=nd;
+ $('side-prog').textContent=(TEAM?('answered '+nd+' / '+ORDER.length):'');
+ const sub=$('btn-submit');
+ sub.disabled=!DRAFT.size;
+ sub.textContent=DRAFT.size?('Submit '+DRAFT.size+(DRAFT.size===1?' decision':' decisions')):'All decisions submitted';
+ markCur();}
+async function decide(action,category){
+ const r=await api('/api/decide',{code:CUR.code,action,category});
+ await refreshList();
+ if(r.next){load(r.next);}
+ else if(TEAM){
+  $('frames').innerHTML='<div class="done">All videos decided ✓<br><span style="font-size:14px;color:#5b6b80">Check your answers in the sidebar, go back and change any of them, then press <b>Submit</b> (<kbd>s</kbd>).</span></div>';
+ }else document.body.innerHTML='<div class="done">Queue complete ✓</div>';}
+function step(dir){
+ if(!ORDER.length||!CUR)return;
+ const i=ORDER.indexOf(CUR.code),j=Math.min(ORDER.length-1,Math.max(0,i+dir));
+ if(j!==i)load(ORDER[j]);}
 function openModal(){$('modal').classList.remove('hidden');const c=$('cats');c.innerHTML='';
  CATS.forEach((name,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' '+name;
   b.onclick=()=>{closeModal();decide('category',name);};c.appendChild(b);});}
 function closeModal(){$('modal').classList.add('hidden');}
+async function submitAll(){
+ const msg=$('side-submsg');
+ if(!DRAFT.size){msg.textContent='Nothing new to submit.';return;}
+ const r=await api('/api/submit');
+ msg.textContent=r.error||r.message||'Done.';msg.style.color=r.error?'#b3261e':'#1a7f37';
+ await refreshList();}
+$('btn-submit').onclick=submitAll;
+$('btn-prev').onclick=()=>step(-1);
+$('btn-next').onclick=()=>step(1);
 document.addEventListener('keydown',e=>{
  if(!$('modal').classList.contains('hidden')){
   if(e.key>='1'&&e.key<='9'&&Number(e.key)<=CATS.length){const n=Number(e.key);if(n>=1&&n<=CATS.length){closeModal();decide('category',CATS[n-1]);}}
@@ -126,17 +215,32 @@ document.addEventListener('keydown',e=>{
  if(e.key==='g')decide('approve');
  else if(e.key==='w')decide('reject');
  else if(e.key==='r')openModal();
- else if(e.key==='u'){api('/api/undo').then(r=>{if(r.code)load(r.code);});}
+ else if(e.key==='u'){api('/api/undo').then(async r=>{await refreshList();if(r.code)load(r.code);});}
+ else if(e.key==='n')step(1);
+ else if(e.key==='p')step(-1);
+ else if(e.key==='s')submitAll();
  else if(e.key==='ArrowRight'&&CUR.item.frames.length){SEL=Math.min(SEL+1,CUR.item.frames.length-1);select();}
  else if(e.key==='ArrowLeft'){SEL=Math.max(SEL-1,0);select();}
 });
-api('/api/queue').then(q=>{
- if(q.team){const t=document.createElement('span');t.id='team';t.className='muted';$('top').appendChild(t);
-  $('team').textContent=q.team.user+' · reviewed '+q.team.done+'/'+q.team.pool;}
- if(q.items.length)load(q.items[0].code);
- else document.body.innerHTML='<div class="done">'+(q.team
-  ?('All '+q.team.pool+' videos reviewed by '+q.team.user+' ✓')
-  :'No review items.<br>If the queue should not be empty, run: python review_capture.py')+'</div>';});
+api('/api/list').then(async q=>{
+ if(q.team){
+  TEAM=true;
+  ORDER=q.items.map(i=>i.code);
+  DONE={};q.items.forEach(i=>{if(i.verdict)DONE[i.code]=i.verdict==='category'?(i.category||'category'):i.verdict;});
+  DRAFT=new Set(q.draft||[]);
+  const t=document.createElement('span');t.className='muted';$('top').appendChild(t);
+  t.textContent=q.team.user+' · answered '+Object.keys(DONE).length+'/'+ORDER.length;
+  await refreshList();
+  const pend=ORDER.filter(c=>!DONE[c]);
+  if(pend.length)load(pend[0]);
+  else{$('frames').innerHTML='<div class="done">All '+ORDER.length+' videos already decided ✓<br><span style="font-size:14px;color:#5b6b80">Jump to any video in the sidebar to change your decision, then press <b>Submit</b> (<kbd>s</kbd>).</span></div>';}
+ }else{
+  document.body.classList.add('no-side');
+  const legacy=await api('/api/queue');
+  ORDER=legacy.items.map(i=>i.code);
+  if(ORDER.length)load(ORDER[0]);
+  else document.body.innerHTML='<div class="done">No review items.<br>If the queue should not be empty, run: python review_capture.py</div>';}
+});
 </script></body></html>'''
 
 
@@ -159,6 +263,38 @@ def queue():
         "SELECT url FROM feed_items WHERE status='review' ORDER BY first_seen_utc")]
     db.close()
     return [shortcode(r['url']) for r in rows]
+
+
+def list_state():
+    """Sidebar state: every video in pool order with my verdict (if any),
+    plus which of my decisions are still unsent (drafts)."""
+    user = STATE.get('team_user')
+    if not user:
+        return {'team': False, 'items': []}
+    pool = rt.pool()
+    latest = rt.latest_opinions(user)
+    order = sorted(pool, key=lambda u: pool[u].get('first_seen_utc') or '')
+    items = []
+    for u in order:
+        op = latest.get(u)
+        items.append({'code': pool[u].get('code') or shortcode(u),
+                      'verdict': op.get('action') if op else None,
+                      'category': (op.get('category') if op else '') or ''})
+    return {'team': {'user': user}, 'items': items,
+            'draft': sorted(STATE['draft'])}
+
+
+def submit():
+    """Upload all decisions (drafts and any earlier unsent ones) at once."""
+    user = STATE.get('team_user')
+    if not user:
+        raise RuntimeError('team mode only')
+    count = len(STATE['draft'])
+    rt.sync_push('review', quiet=True)
+    STATE['draft'].clear()
+    return {'count': count,
+            'message': (f'Submitted {count} decision(s) — synced to the shared repo.'
+                        if count else 'Everything was already submitted.')}
 
 
 def item_data(code):
@@ -195,24 +331,6 @@ def refresh_reports():
     s.db.close()
 
 
-_push_failed = False
-
-
-def _team_push():
-    """Push my opinions to the shared repo; print only on state transitions."""
-    global _push_failed
-    try:
-        rt.sync_push('review', quiet=True)
-        if _push_failed:
-            print('Team push recovered.', flush=True)
-        _push_failed = False
-    except Exception as exc:
-        if not _push_failed:
-            print(f'Team push failed ({type(exc).__name__}: {exc}) -- '
-                  'will retry on the next decision.', flush=True)
-        _push_failed = True
-
-
 def apply(code, action, category):
     user = STATE.get('team_user')
     url = f'https://www.instagram.com/reel/{code}/'
@@ -236,11 +354,11 @@ def apply(code, action, category):
         db.commit()
     db.close()
     if user:
-        # Team mode: the opinion is the record of truth; the local sqlite row
-        # may not even exist (video collected by another member).
+        # Team mode: decisions are drafts until Submit. Appending a new line
+        # for the same video changes the earlier decision (latest wins).
         op = rt.record_opinion(user, url, action, category or '')
         STATE['undo'].append((code, old, op['id']))
-        _team_push()
+        STATE['draft'].add(code)
         if old is not None:
             refresh_reports()
         return True
@@ -259,7 +377,9 @@ def undo():
     user = STATE.get('team_user')
     if user and len(entry) == 3:
         rt.remove_opinion(user, entry[2])
-        _team_push()
+        url = f'https://www.instagram.com/reel/{code}/'
+        if url not in rt.latest_opinions(user):
+            STATE['draft'].discard(code)
     if old is not None:
         db = sqlite3.connect(Path(STATE['store']) / 'feed_collection.sqlite')
         db.execute('UPDATE feed_items SET status=?, reason=?, category=? WHERE url=?',
@@ -294,6 +414,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/':
             self.send_bytes(PAGE.encode(), 'text/html; charset=utf-8')
             return
+        if path == '/api/list':
+            self.send_json(list_state())
+            return
         if path == '/api/queue':
             resp = {'items': [{'code': c} for c in queue()]}
             user = STATE.get('team_user')
@@ -320,13 +443,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get('Content-Length', 0))
         data = json.loads(self.rfile.read(length) or b'{}')
-        if self.path == '/api/decide':
-            apply(data.get('code'), data.get('action'), data.get('category'))
-            rest = queue()
-            self.send_json({'next': rest[0] if rest else None})
-            return
-        if self.path == '/api/undo':
-            self.send_json({'code': undo()})
+        try:
+            if self.path == '/api/decide':
+                apply(data.get('code'), data.get('action'), data.get('category'))
+                rest = queue()
+                self.send_json({'next': rest[0] if rest else None})
+                return
+            if self.path == '/api/undo':
+                self.send_json({'code': undo()})
+                return
+            if self.path == '/api/submit':
+                result = submit()
+                self.send_json({'ok': True, **result})
+                return
+        except (ValueError, RuntimeError) as exc:
+            self.send_json({'error': str(exc)})
             return
         self.send_error(404)
 
@@ -354,7 +485,8 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     print(f'Review queue: http://127.0.0.1:{args.port}   (store={args.store})')
     print(f'Review items queued: {len(queue())}')
-    print('Keys: g approve · w reject · r category · u undo · Ctrl-C to quit')
+    print('Keys: g approve · w reject · r category · u undo · p/n prev/next video · s submit')
+    print('Decisions stay local until you press s (Submit) — then they all go up at once.')
     if not args.no_browser:
         threading.Timer(0.8, webbrowser.open, [f'http://127.0.0.1:{args.port}']).start()
     try:

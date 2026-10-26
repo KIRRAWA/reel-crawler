@@ -132,7 +132,12 @@ python3 team_gui.py            # the hub opens
   changes — your reviews and any new video metadata from your local
   collection stores (the videos themselves never leave the machine).
 - **Card 3** — click **Open review queue** (or log in with the checkbox).
-- In the review queue, keyboard only:
+- The review page works like an exam paper:
+  - A **sidebar** on the left lists every video, split into **Not decided
+    yet** and **Decided** — click any entry to jump to that video.
+  - **← Prev / Next →** (keys `p` / `n`) walk the whole list so you can
+    skip a video and come back to it later.
+  - Keyboard:
 
   | Key | Action |
   |---|---|
@@ -140,9 +145,14 @@ python3 team_gui.py            # the hub opens
   | `w` | reject the video |
   | `r` | choose a category (keys `1`–`12`) and approve |
   | `u` | undo the last decision |
+  | `p` / `n` | previous / next video |
+  | `s` | submit all decisions at once |
   | `←`/`→` | focus the frame evidence |
 
-  Every decision is **pushed to GitHub immediately** — no manual push needed.
+  Decisions are **saved locally as you go** — nothing is uploaded until you
+  press **Submit** (`s`) at the end. Until then you can jump back to any
+  earlier video and change your answer (the latest answer wins; every
+  change is kept in the log).
   Items without local frame evidence still appear; open the reel link and
   decide from the video itself.
 - When the queue is empty, you have reviewed the entire pool. Progress is

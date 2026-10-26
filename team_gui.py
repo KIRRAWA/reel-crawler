@@ -142,7 +142,7 @@ td.you{font-weight:700}
 
 <div class="card">
  <h2>4 · Sync <span class="badge" id="sync-badge"></span></h2>
- <p class="hint">Sync: online → this machine = download everyone's latest videos and reviews. Sync: this machine → online = upload yours — your reviews AND any new video metadata from your local collection stores (the videos themselves never leave the machine). The review queue pushes automatically after every decision, so these are mainly for collecting or checking progress.</p>
+ <p class="hint">Sync: online → this machine = download everyone's latest videos and reviews. Sync: this machine → online = upload yours — your reviews AND any new video metadata from your local collection stores (the videos themselves never leave the machine). The review queue now saves your decisions locally as you go and uploads them all together when you press Submit (s) at the end — exam style — so these two buttons are mainly for collecting or checking progress.</p>
  <button class="act ghost" id="btn-pull">Sync: online → this machine</button>
  <button class="act ghost" id="btn-push">Sync: this machine → online</button>
  <div class="msg" id="sync-msg"></div>
