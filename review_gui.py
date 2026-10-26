@@ -15,7 +15,9 @@ original verdict is preserved inside the new reason for audit) and the CSVs
 plus analysis.html are regenerated after every decision.
 
 Items without captured frames still appear, so you can open the reel link
-and decide from the video itself.
+and decide from the video itself -- or click "Capture 10 frames from link"
+on the item, which downloads the reel and saves 10 frames spread evenly
+across its duration (review_capture.capture_link).
 
 Team mode (review_team.py): when a sync repo exists and someone is logged
 in, the queue becomes the merged pool minus your own opinions. The page
@@ -36,6 +38,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import feed_collector as f
+import review_capture as rc
 import review_team as rt
 
 STATE = {'store': 'feed_candidates_mine', 'frames': 'review_frames', 'undo': [],
@@ -67,6 +70,9 @@ kbd{background:#243040;border-radius:4px;padding:1px 7px;margin:0 2px}
 #modalbox button{padding:10px;font-size:14px;border:1px solid #cfd8e6;border-radius:8px;background:#f7f9fc;cursor:pointer}
 #modalbox button:hover{background:#e8f0fe}
 .done{padding:40px;text-align:center;font-size:18px}
+.capbtn{background:#2f6fed;color:#fff;border:none;border-radius:6px;padding:5px 12px;font:600 13px system-ui;cursor:pointer;margin-right:6px}
+.capbtn:disabled{opacity:.55;cursor:default}
+.capmsg{color:#5b6b80}
 /* exam-style sidebar */
 #side{position:fixed;top:0;bottom:52px;left:0;width:280px;background:#fff;border-right:1px solid #e2e8f0;overflow-y:auto;z-index:8;display:flex;flex-direction:column}
 #side.hidden{display:none}
@@ -156,8 +162,17 @@ async function load(code){
    card.appendChild(t);}
   card.onclick=()=>{SEL=i;select();};
   fr.appendChild(card);});
- if(!(d.item.frames||[]).length){
-  fr.innerHTML='<div class="info">No frame evidence captured yet — run review_capture.py, or open <a href="'+esc(d.item.url)+'" target="_blank">the reel</a> and decide from the video.</div>';}
+ if((d.item.frames||[]).length<10){
+  fr.innerHTML='<div class="info">'+((d.item.frames||[]).length?('Only '+(d.item.frames||[]).length+' frame(s) yet. '):'No frame evidence yet. ')
+   +'<button class="capbtn" id="btn-capture">Capture 10 frames from link</button><span class="capmsg" id="cap-msg"></span>'
+   +'or open <a href="'+esc(d.item.url)+'" target="_blank">the reel</a> and decide from the video.</div>';}
+ const bc=$('btn-capture');
+ if(bc)bc.onclick=async()=>{
+  bc.disabled=true;$('cap-msg').textContent='capturing… (usually 10–60s)';
+  const r=await api('/api/capture',{code:code});
+  bc.disabled=false;
+  $('cap-msg').textContent=r.error||('✓ '+r.frames+' frames saved');
+  if(r.ok)load(code);};
  select();markCur();}
 function select(){const cards=document.querySelectorAll('.card');cards.forEach((c,i)=>c.classList.toggle('sel',i===SEL));const c=cards[SEL];if(c)c.scrollIntoView({block:'nearest'});}
 function markCur(){document.querySelectorAll('#side .se').forEach(el=>el.classList.toggle('cur',el.dataset.code===CUR.code));}
@@ -369,6 +384,25 @@ def apply(code, action, category):
     return True
 
 
+_capture_busy = False
+
+
+def capture(code):
+    """Download one reel by link and save 10 frames evenly spread across it."""
+    global _capture_busy
+    if not code:
+        raise RuntimeError('missing code')
+    if _capture_busy:
+        raise RuntimeError('Another frame capture is still running — wait a moment and try again.')
+    _capture_busy = True
+    try:
+        n = rc.capture_link(f'https://www.instagram.com/reel/{code}/',
+                            STATE['frames'], force=True)
+    finally:
+        _capture_busy = False
+    return {'code': code, 'frames': n}
+
+
 def undo():
     if not STATE['undo']:
         return None
@@ -455,6 +489,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/submit':
                 result = submit()
                 self.send_json({'ok': True, **result})
+                return
+            if self.path == '/api/capture':
+                self.send_json({'ok': True, **capture(data.get('code'))})
                 return
         except (ValueError, RuntimeError) as exc:
             self.send_json({'error': str(exc)})

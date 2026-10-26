@@ -104,7 +104,7 @@ python3 team_gui.py            # 打开团队中心
   | `s` | 一键提交全部决定 |
   | `←`/`→` | 切换抽帧焦点 |
 
-  决定**先只存在本机**——按 **Submit**（`s`）时一次性全部上传。提交前随时可以回侧边栏改之前的答案（以最后一次为准，每次修改都留痕）。没有本地抽帧证据的条目也会出现，点开 reel 链接看视频本身再决定。
+  决定**先只存在本机**——按 **Submit**（`s`）时一次性全部上传。提交前随时可以回侧边栏改之前的答案（以最后一次为准，每次修改都留痕）。抽帧不足 10 张（含 0 张）的条目会出现 **Capture 10 frames from link** 按钮——按下即下载该 reel 并按视频时长均匀切出 10 帧，存在本机 `review_frames/` 下；也可以直接点开 reel 链接看视频本身再决定。
 - 队列空了 = 你把整个池审完了。进度对全员可见（卡片 2，或 `python3 review_team.py status`）。
 
 ### 同一台机器也采集（可选）
@@ -128,6 +128,8 @@ python3 team_gui.py            # 打开团队中心
 | 打印合并池 | `python3 review_team.py pool` |
 | 打开团队中心 | `python3 review_team.py gui` |
 | 审阅队列（团队模式） | `python3 review_gui.py` |
+| 为一条 reel 抓 10 帧 | `python3 review_capture.py --url <reel链接>` |
+| 为池中所有缺帧视频抓 10 帧 | `python3 review_capture.py --pool` |
 
 ## 7. 账号与密码
 

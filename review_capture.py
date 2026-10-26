@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """review_capture.py -- save lightweight frame evidence for review items.
 
-The screening pipeline analyzes each reel in a temp dir and deletes it, so
-after a run there is nothing local to eyeball. This script re-downloads each
-item currently in the review queue and saves:
-  * every frame the model flagged as uncertain (reusing the per-frame
-    verdicts already stored in visual_json -- no model calls are made here)
-  * up to --context evenly spaced context frames for scene orientation
-as small 320px JPEGs under review_frames/<shortcode>/, together with a
-meta.json (caption, transcript, audio status, per-frame model vote) that
-review_gui.py renders as a keyboard-driven queue.
+Every reel gets a FIXED set of frames (--n, default 10), spread evenly
+across the video duration -- the same treatment for every video. Frames are
+saved as small 320px JPEGs under review_frames/<shortcode>/ together with a
+meta.json (caption, transcript, audio status) that review_gui.py renders.
 
-Run it only while no collector/rescreen is using the browser profile.
+Three ways to run it:
+
+  python review_capture.py --store feed_candidates_mine
+      # every 'review' item in one collection store
+
+  python review_capture.py --pool
+      # every team pool video that has no frames yet (sync repo + login)
+
+  python review_capture.py --url https://www.instagram.com/reel/AbCd1234/
+      # one reel by link -- the same function behind the review page's
+      # "Capture 10 frames from link" button
+
+The link-based capture uses the saved cookie jar (cookies.txt), so no
+browser is launched at all when the jar exists. Batch modes over a store
+prefer the jar too and only fall back to a headless browser export.
 """
 
 import argparse
@@ -20,11 +29,18 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
-PROFILE = 'instagram-session'
-INTERVAL = 2.0  # must match the frame interval used by the screening run
+import review_download as rd
+
+INTERVAL = 2.0  # nominal screening frame interval (used to map frames to model votes)
+
+
+def shortcode(url):
+    m = re.search(r'/reels?/([\w-]+)/?', url)
+    return m.group(1) if m else ''
 
 
 def clean(v):
@@ -35,36 +51,9 @@ def clean(v):
             and (v.get('confidence') or 0) >= 0.8)
 
 
-def shortcode(url):
-    return re.sub(r'.*/reels?/([\w-]+)/?', r'\1', url)
-
-
-def export_cookies():
-    """Instagram cookies from the collector profile, via a headless launch
-    that navigates nowhere."""
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(
-            str(Path(PROFILE).resolve()), headless=True, channel='msedge',
-            args=['--disable-blink-features=AutomationControlled'],
-            ignore_default_args=['--enable-automation'])
-        ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
-        cookies = ctx.cookies('https://www.instagram.com/')
-        ctx.close()
-    lines = ['# Netscape HTTP Cookie File']
-    for c in cookies:
-        d = c.get('domain', '')
-        lines.append('\t'.join([
-            d, 'TRUE' if d.startswith('.') else 'FALSE', c.get('path', '/'),
-            'TRUE' if c.get('secure') else 'FALSE',
-            str(max(0, int(c.get('expires', 0)))), c.get('name', ''), c.get('value', ''),
-        ]))
-    return lines
-
-
 def download_video(url, folder):
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as f:
-        f.write('\n'.join(export_cookies()) + '\n')
+        f.write('\n'.join(rd.export_cookies()) + '\n')
         cookie_path = f.name
     # Strip dead proxy env vars (this machine's 127.0.0.1:10887).
     env = {k: v for k, v in os.environ.items()
@@ -83,42 +72,68 @@ def download_video(url, folder):
         os.unlink(cookie_path)
 
 
-def collect_frames(path, out_dir, interval, keep):
-    """Decode the video and save only the frames whose index is in `keep`."""
+def collect_frames_even(path, out_dir, n):
+    """Decode the video and save n frames evenly spread across its duration.
+
+    Target times are the midpoints of n equal segments, so every part of the
+    video is represented. Returns (duration_seconds, saved_frames)."""
     import av
-    frames, idx, next_at = [], 0, 0.0
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     with av.open(str(path)) as container:
-        if not container.streams.video:
+        stream = next((s for s in container.streams if s.type == 'video'), None)
+        if stream is None:
             raise RuntimeError('No video stream')
+        duration = (float(stream.duration * stream.time_base)
+                    if stream.duration else None)
+        if not duration:
+            duration = 0.0
+            for frame in container.decode(video=0):
+                duration = float(frame.time or 0)
+        if not duration or duration <= 0:
+            raise RuntimeError('Cannot determine video duration')
+        targets = [duration * (i + 0.5) / n for i in range(n)]
+        saved, next_i = [], 0
         for frame in container.decode(video=0):
             at = float(frame.time or 0)
-            if at >= next_at:
-                if idx in keep:
-                    name = f'f{idx:03d}.jpg'
-                    im = frame.to_image()
-                    im.thumbnail((320, 320))
-                    im.save(Path(out_dir) / name, quality=70)
-                    frames.append({'idx': idx, 'file': name, 'time': round(at, 1)})
-                idx += 1
-                next_at = at + interval
-    if not frames:
+            if next_i < n and at >= targets[next_i]:
+                name = f'f{next_i:03d}.jpg'
+                im = frame.to_image()
+                im.thumbnail((320, 320))
+                im.save(Path(out_dir) / name, quality=70)
+                saved.append({'idx': next_i, 'file': name, 'time': round(at, 1)})
+                next_i += 1
+    if not saved:
         raise RuntimeError('No frames decoded')
-    return frames
+    return round(duration, 1), saved
 
 
-def pick_indices(total, visuals, context):
-    flagged = set()
-    for v in visuals:
-        s = int(v.get('sample_batch_start_index', 0))
-        n = int(v.get('sample_frame_count', 0))
-        if not clean(v):
-            flagged.update(range(s, s + n))
-    keep = set(flagged)
-    if context > 0:
-        step = max(1.0, (total - 1) / max(1, context - 1)) if total > 1 else 1.0
-        for i in range(context):
-            keep.add(min(total - 1, int(round(i * step))))
-    return keep, flagged
+def capture_link(url, frames_dir='review_frames', n=10, force=False):
+    """Download one reel by its link and save n evenly spaced frames.
+
+    This is the function behind the review page's 'Capture 10 frames from
+    link' button. Returns the number of frames saved (0 when frames already
+    exist and force is off). Raises RuntimeError on download/decode failure.
+    """
+    code = shortcode(url)
+    if not code:
+        raise RuntimeError(f'not a reel URL: {url}')
+    out_dir = Path(frames_dir) / code
+    if (out_dir / 'meta.json').exists() and not force:
+        return 0    # already captured -- nothing to do
+    with tempfile.TemporaryDirectory(prefix='review-cap-') as folder:
+        path = download_video(url, folder)
+        duration, saved = collect_frames_even(path, out_dir, n)
+    meta = {
+        'url': url, 'username': '', 'caption': '', 'likes': None,
+        'status': 'review', 'reason': 'frames_from_link', 'category': 'other',
+        'audio_status': None, 'transcript': '', 'duration_seconds': duration,
+        'frames': saved,
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / 'meta.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2),
+                                       encoding='utf-8')
+    return len(saved)
 
 
 def model_vote(visuals, idx):
@@ -144,27 +159,31 @@ def capture_row(row, args):
         except Exception as exc:
             print(f'{code}: DOWNLOAD FAILED ({exc}) -- skipping')
             return
-        total = int((row['duration_seconds'] or 0) // INTERVAL) + 1
-        keep, flagged = pick_indices(total, visuals, args.context)
-        out_dir.mkdir(parents=True, exist_ok=True)
         try:
-            saved = collect_frames(path, out_dir, INTERVAL, keep)
+            duration, saved = collect_frames_even(path, out_dir, args.n)
         except Exception as exc:
             print(f'{code}: DECODE FAILED ({exc}) -- skipping')
             return
     audio = json.loads(row['audio_json'] or '{}')
+
+    def tag(f):
+        # Keep the per-frame model audit where the screening run left one.
+        vote = model_vote(visuals, int(f['time'] / INTERVAL))
+        return dict(f, flagged=vote is not None and not clean(vote),
+                    model=vote if vote else None)
+
     meta = {
         'url': row['url'], 'username': row['username'], 'caption': row['caption'],
         'likes': row['like_count'], 'status': row['status'], 'reason': row['reason'],
         'category': row['category'], 'audio_status': audio.get('status'),
         'transcript': audio.get('transcript', ''),
-        'duration_seconds': row['duration_seconds'],
-        'frames': [dict(f, flagged=f['idx'] in flagged, model=model_vote(visuals, f['idx']))
-                   for f in sorted(saved, key=lambda x: x['idx'])],
+        'duration_seconds': row.get('duration_seconds') or duration,
+        'frames': [tag(f) for f in saved],
     }
+    out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / 'meta.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                                        encoding='utf-8')
-    print(f'{code}: saved {len(saved)} frames ({len(flagged)} flagged) -> {out_dir}')
+    print(f'{code}: saved {len(saved)} frames -> {out_dir}')
 
 
 def main():
@@ -172,22 +191,47 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--store', default='feed_candidates_mine', help='collection folder')
     ap.add_argument('--frames', default='review_frames', help='evidence output dir')
-    ap.add_argument('--context', type=int, default=12, help='context frames per video')
+    ap.add_argument('--n', type=int, default=10,
+                    help='frames per video, evenly spread across its duration (default 10)')
+    ap.add_argument('--url', default=None, help='capture one reel by link instead of a batch')
+    ap.add_argument('--pool', action='store_true',
+                    help='capture every team pool video (needs sync repo + login)')
     ap.add_argument('--only', action='append', default=[], metavar='CODE',
                     help='shortcode to capture (repeatable)')
     ap.add_argument('--force', action='store_true', help='re-capture items that already have frames')
     args = ap.parse_args()
 
-    db = sqlite3.connect(Path(args.store) / 'feed_collection.sqlite')
-    db.row_factory = sqlite3.Row
-    q = "SELECT * FROM feed_items WHERE status='review'"
-    params = []
-    if args.only:
-        q += ' AND url IN (' + ','.join('?' * len(args.only)) + ')'
-        params += [f'https://www.instagram.com/reel/{c}/' for c in args.only]
-    rows = [dict(r) for r in db.execute(q + ' ORDER BY first_seen_utc', params)]
-    db.close()
-    print(f'{len(rows)} review item(s) to capture.')
+    if args.url:
+        code = shortcode(args.url)
+        n = capture_link(args.url, args.frames, args.n, args.force)
+        print(f'{code}: {n} frame(s) saved -> {Path(args.frames) / code}')
+        return
+
+    if args.pool:
+        import review_team as rt
+        user = rt.session_user()
+        if not user:
+            sys.exit('Not logged in -- run: python review_team.py login <name>')
+        pool = rt.pool()
+        rows = [{'url': u, 'username': pool[u].get('username'),
+                 'caption': pool[u].get('caption'), 'like_count': pool[u].get('likes'),
+                 'status': pool[u].get('model_status') or 'review',
+                 'reason': pool[u].get('model_reason') or 'no_frame_evidence',
+                 'category': pool[u].get('model_category') or 'other',
+                 'audio_json': '{}', 'visual_json': '[]',
+                 'duration_seconds': pool[u].get('duration_seconds')}
+                for u in sorted(pool)]
+    else:
+        db = sqlite3.connect(Path(args.store) / 'feed_collection.sqlite')
+        db.row_factory = sqlite3.Row
+        q = "SELECT * FROM feed_items WHERE status='review'"
+        params = []
+        if args.only:
+            q += ' AND url IN (' + ','.join('?' * len(args.only)) + ')'
+            params += [f'https://www.instagram.com/reel/{c}/' for c in args.only]
+        rows = [dict(r) for r in db.execute(q + ' ORDER BY first_seen_utc', params)]
+        db.close()
+    print(f'{len(rows)} item(s) to capture ({args.n} frames each).')
     for row in rows:
         capture_row(row, args)
     print('Done. Start the review queue with: python review_gui.py')

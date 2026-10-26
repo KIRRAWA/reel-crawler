@@ -153,8 +153,11 @@ python3 team_gui.py            # the hub opens
   press **Submit** (`s`) at the end. Until then you can jump back to any
   earlier video and change your answer (the latest answer wins; every
   change is kept in the log).
-  Items without local frame evidence still appear; open the reel link and
-  decide from the video itself.
+  Items with fewer than 10 frames (including none at all) show a
+  **Capture 10 frames from link** button — it downloads the reel and cuts
+  10 frames spread evenly across its duration, saved locally under
+  `review_frames/`. Or just open the reel link and decide from the video
+  itself.
 - When the queue is empty, you have reviewed the entire pool. Progress is
   visible to everyone in card 2 and via `python3 review_team.py status`.
 
@@ -183,6 +186,8 @@ terminal (scriptable, useful over SSH):
 | Print the merged pool | `python3 review_team.py pool` |
 | Open the team hub | `python3 review_team.py gui` |
 | Review queue (team mode) | `python3 review_gui.py` |
+| Capture 10 frames for one reel | `python3 review_capture.py --url <reel-link>` |
+| Capture 10 frames for every pool video missing them | `python3 review_capture.py --pool` |
 
 ## 7. Accounts & passwords
 

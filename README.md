@@ -26,8 +26,8 @@ This branch builds on the original collector and adds Mac support, screening-spe
 With `--frame-interval 5 --vision-batch 0 --speech-model base` on an Apple Silicon Mac, screening runs at roughly 1-2 minutes per 90-second item instead of 10-15.
 
 **New human-review toolchain (all local, no network uploads)**
-- `review_capture.py` — re-downloads review items once, re-samples frames at the original interval, and saves the frames the model flagged as uncertain plus up to 12 context frames as 320 px JPEGs under `review_frames/<shortcode>/`. Reuses the stored per-frame verdicts, so it makes no model calls; the downloaded video is deleted after extraction.
-- `review_gui.py` — local keyboard queue at http://127.0.0.1:8765: `g` approve, `w` reject, `r` choose a category (keys 1-12), `u` undo, arrow keys focus frames. Decisions write back to the SQLite store with an audit trail and regenerate every CSV plus analysis.html.
+- `review_capture.py` — downloads review items and saves a fixed 10 frames per video (change with `--n`), spread evenly across the video's duration, as 320 px JPEGs under `review_frames/<shortcode>/`. Also runs by link (`--url https://www.instagram.com/reel/.../`) and over the whole team pool (`--pool`). The downloaded video is deleted after extraction.
+- `review_gui.py` — local keyboard queue at http://127.0.0.1:8765: `g` approve, `w` reject, `r` choose a category (keys 1-12), `u` undo, arrow keys focus frames. In team mode the page works like an exam paper: a sidebar lists answered/unanswered videos, `p`/`n` walk back and forth, and one Submit (`s`) uploads every decision at once. Items with fewer than 10 frames show a "Capture 10 frames from link" button. Decisions write back to the SQLite store with an audit trail and regenerate every CSV plus analysis.html.
 - `review_download.py` — list items by status, download selected ones fully into `review_videos/`, and record verdicts from the command line (`--approve` / `--reject` / `--category`).
 
 **New multi-reviewer team sync (every member reviews every video)**

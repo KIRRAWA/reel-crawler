@@ -67,13 +67,17 @@ model pre-screen, with humans reviewing only what the model flags.
 ## 6. Human review (optional, recommended)
 
 ```bash
-# capture uncertain-frame evidence first (zero model calls)
+# capture frame evidence first (zero model calls): 10 frames per video,
+# spread evenly across its duration (change with --n)
 python review_capture.py --store feed_candidates_mine --frames review_frames
 # only some items: --only CODE1 --only CODE2 ; re-capture: --force
+# one reel by link:  python review_capture.py --url https://www.instagram.com/reel/AbCd1234/
+# every team-pool video without frames:  python review_capture.py --pool
 
 # keyboard review queue at http://127.0.0.1:8765
 python review_gui.py --store feed_candidates_mine --frames review_frames
 # keys: g approve · w reject · r choose category (1-12) · u undo · arrows focus frames
+# items with fewer than 10 frames show a "Capture 10 frames from link" button
 ```
 
 ## 6b. Multi-reviewer team sync (every member reviews every video)
