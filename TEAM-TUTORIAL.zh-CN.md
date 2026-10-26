@@ -1,0 +1,168 @@
+# reel-crawler · 团队审阅使用教程（中文版）
+
+实验室需要的全部内容：采集 Instagram reels、模型筛选、**每位成员审阅每一条视频**——所有意见都保留，并通过一个 private GitHub 仓库全组同步。
+
+- **新成员？** 从 [2. 环境要求](#2-环境要求) 开始，按 [4. 加入你的机器](#4-加入你的机器) 操作。
+- **今天只想审阅？** 直接看 [5. 每日流程——审阅](#5-每日流程审阅)。
+- **喜欢命令行？** 每个页面操作都有对应的 CLI 命令，见 [6. 命令行对照表](#6-命令行对照表)。
+
+> 英文原版：TEAM-TUTORIAL.md（内容一致）
+
+---
+
+## 1. 团队工作流总览
+
+```
+采集                    筛选（可选，按实验室政策）              审阅
+──────────             ────────────────────────────          ──────
+feed_collector.py  →   feed_collector.py --rescreen（LLM） →   review_gui.py
+每位成员一个              点赞门槛 + 音频 + 视觉模型             每位成员
+Instagram 账号                                                审每一条视频
+        │                                                              │
+        └────────────  sync_repo/（private GitHub 仓库）  ─────────────┘
+                         items/  opinions/  accounts/
+```
+
+- **items** = 每条采集视频的公开元数据（URL、@作者、点赞数、文案、模型判断）。视频本体、抽帧、转录**永不离开本机**——IRB 规定（视频可能含第三方人脸）。
+- **opinions** = 每位审阅者一份 append-only 日志。每个决定永久保留，包括互相冲突的；有争议的视频自动列表。
+- **accounts** = 每位成员的用户名+密码（只存加盐 PBKDF2 哈希）。全组可以**共用一个 GitHub 账号**——成员靠应用内账号区分，且每条 git commit 的作者都写成该账号名。不需要把组员加成 GitHub collaborator。
+
+## 2. 环境要求
+
+| 要求 | 说明 |
+|---|---|
+| Python 3 | 审阅工具只用标准库 |
+| git | macOS 自带（Xcode CLT）/ 任意 Linux 发行版 |
+| 浏览器 | 工具页面是本地网页（Edge/Chrome） |
+| 一个 **private** GitHub 仓库 | 只建一次（第 3 节）；归任意单一账号（如实验室公用账号） |
+
+只有**采集和筛选**的机器才需要采集器的依赖（Playwright + cookies，视觉模型还要 Ollama）——详见 RUNBOOK.md。审阅什么都不用装。
+
+## 3. 一次性配置（第一台机器，约 5 分钟）
+
+### 3.1 在 GitHub 上建 private 仓库
+
+1. 登录持有同步仓库的账号（一个实验室公用账号即可）。
+2. **New repository** → 命名如 `reel-review-sync` → 选 **Private** → 不要勾 "Add a README"（仓库必须从空开始）→ Create。
+3. （共用账号路线）给它建一个 **token**：Settings → Developer settings → Personal access tokens → 权限只勾 `repo`。复制 token——每台机器粘贴一次，之后不再显示。
+   （个人凭据路线：跳过 token，用每台机器自己的 GitHub 身份，如 SSH。两条路线都可用。）
+
+### 3.2 在第一台机器启动团队中心
+
+```bash
+cd reel-crawler
+python3 team_gui.py        # 或：python3 review_team.py gui
+```
+
+浏览器自动打开 **http://127.0.0.1:8766**——团队中心。从上到下填五张卡片：
+
+**1 · Shared GitHub repo（共享仓库）**
+粘贴仓库 URL（`https://github.com/<账号>/reel-review-sync`），走共用账号路线再粘贴 token。点 **Set up / update remote**。这会在本地创建 `sync_repo/` 文件夹、提交初始状态并推送到 GitHub。
+
+**2 · Member accounts（成员账号）**
+给每位成员建账号：用户名+密码（至少 4 位）。密码只以加盐 PBKDF2 哈希形式存储并同步到 GitHub——明文永不离开本机。表格显示每个人的审阅进度。
+
+**3 · Log in（登录）**
+用你自己的账号登录。勾选 "Open the review queue right after login" 的话，审阅页（http://127.0.0.1:8765）会自动打开。
+
+配置到此结束。其余卡片每天用（第 5 节）。
+
+## 4. 加入你的机器
+
+每位成员先在自己机器上拿到工具代码（就是包含本文件的仓库），然后：
+
+```bash
+cd reel-crawler
+python3 team_gui.py
+```
+
+1. **卡片 1**——粘贴同一个仓库 URL（共用账号路线再粘 token）。团队中心检测到仓库已有历史，会**自动 clone** 而不是新建。
+2. **卡片 3**——用**你自己的**账号密码登录。
+
+别的什么都不用做：你的审阅队列 = 整个视频池减去你已经审过的。
+
+## 5. 每日流程——审阅
+
+```bash
+python3 team_gui.py            # 打开团队中心
+```
+
+- **卡片 4 · Sync**——开审前点 **pull**（登录时也会自动拉），拿到昨天以来所有人采集和审阅的内容。
+- **卡片 3**——点 **Open review queue**（或登录时勾选自动打开）。
+- 审阅队列里只靠键盘：
+
+  | 键 | 功能 |
+  |---|---|
+  | `g` | 通过（保留模型的分类） |
+  | `w` | 拒绝 |
+  | `r` | 选分类（`1`–`12`）并通过 |
+  | `u` | 撤销上一个决定 |
+  | `←`/`→` | 切换抽帧焦点 |
+
+  每个决定**立即推送到 GitHub**——不需要手动 push。没有本地抽帧证据的条目也会出现，点开 reel 链接看视频本身再决定。
+- 队列空了 = 你把整个池审完了。进度对全员可见（卡片 2，或 `python3 review_team.py status`）。
+
+### 同一台机器也采集（可选）
+
+如果你也用 Instagram 账号采集，照常运行采集器——`python3 feed_collector.py ...`——跑完新视频会自动推入池子。采集/筛选流程见 RUNBOOK.md。
+
+## 6. 命令行对照表
+
+团队中心就是 `review_team.py` 的图形界面；所有功能在终端同样可用（可脚本化，SSH 远程也方便）：
+
+| 任务 | 命令 |
+|---|---|
+| 初始化同步仓库（第一台机器） | `python3 review_team.py init https://github.com/<账号>/reel-review-sync` |
+| 其他机器加入 | `git clone <仓库URL> sync_repo` |
+| 建账号 | `python3 review_team.py account add <名字>` |
+| 列账号 | `python3 review_team.py account list` |
+| 登录 / 登出 | `python3 review_team.py login <名字>` · `logout` |
+| 拉取 / 推送团队状态 | `python3 review_team.py sync pull` · `sync push` |
+| 全员进度 | `python3 review_team.py status` |
+| 争议视频（表格） | `python3 review_team.py disputes` |
+| 打印合并池 | `python3 review_team.py pool` |
+| 打开团队中心 | `python3 review_team.py gui` |
+| 审阅队列（团队模式） | `python3 review_gui.py` |
+
+## 7. 账号与密码
+
+- 用户名：字母、数字、点、横杠、下划线（最长 32）。
+- 密码：至少 4 位。以加盐 PBKDF2-SHA256（120 000 次迭代）存于 `sync_repo/accounts/<名字>.json`——只写哈希、只同步哈希。
+- 改密码：团队中心 → 卡片 3 → **Change my password**。
+- 故意不提供删号：删号会让该成员的历史意见失去归属。需要删找工具维护者。
+
+## 8. 进度、争议与数据
+
+- **进度**：团队中心卡片 2，或 `status`。每人的 `done / total`，以及还没人审过的视频数。
+- **争议**：团队中心卡片 5，或 `disputes`。审阅者意见不一致（通过 vs 拒绝，或分类不同）即列为争议。所有意见都保留在文件里，表格只是把冲突摆出来。
+- **文件位置**：
+
+  | 路径 | 内容 |
+  |---|---|
+  | `sync_repo/accounts/` | 成员账号（仅哈希） |
+  | `sync_repo/items/<名字>.jsonl` | 每位采集者的视频元数据 |
+  | `sync_repo/opinions/<名字>.jsonl` | 每位审阅者的决定，append-only |
+  | `sync_repo/pool.json` | 合并池（派生文件，不入库） |
+  | `sync_repo/.session.json` | 本机登录者（不入库） |
+  | `feed_candidates*/` | 本地采集存储（永不提交） |
+  | `review_frames/`、`review_videos/` | 本地抽帧证据 / 下载（永不提交） |
+
+## 9. 常见问题
+
+**设置按钮提示 "could not reach the remote"（连不上远端）**
+token 错、URL 错或没网。token 权限必须含 `repo`；URL 必须完全一致（区分大小写）；本机能直连 GitHub（工具已自动剥离失效的代理变量）。
+
+**登录提示 "could not pull yet"（拉不下来）**
+本机连不上 GitHub。离线也能审——决定先写在本地，下次 pull/push 成功时补推（审阅队列每次决定都会重试推送）。
+
+**两个人同时推送冲突**
+每次推送前都会先 rebase 拉取；冲突的推送会失败并在下一次决定时重试。最坏情况是多按一次按键——意见是 append-only 的，不会丢。
+
+**我审过的视频显示还没审**
+点 **Sync · pull**——页面显示的是本地状态，pull 之后才会包含所有人的最新推送。
+
+**组员需要是同步仓库的 GitHub collaborator 吗？**
+不需要——共用账号路线下所有人用同一个 token 推送；SSH 路线下把每台机器的公钥加到那个 GitHub 账号上。无论哪种，仓库只需要**一个** GitHub 账号。
+
+**没有 GitHub 账号能用吗？**
+能，但同步变手动：`sync_repo/` 就是个 git 仓库，推/拉到任何 git 主机（GitLab、实验室服务器、U 盘）完全一样——只改 URL。

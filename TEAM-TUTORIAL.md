@@ -1,5 +1,7 @@
 # reel-crawler · Team Review Tutorial
 
+> 中文版：[TEAM-TUTORIAL.zh-CN.md](TEAM-TUTORIAL.zh-CN.md)
+
 Everything the lab needs to collect Instagram reels, screen them, and have
 **every member review every video** — with all opinions kept and synced
 through one private GitHub repo.
