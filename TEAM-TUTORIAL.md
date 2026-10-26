@@ -77,7 +77,10 @@ cards top to bottom:
 Paste the repo URL (`https://github.com/<account>/reel-review-sync`) and, if
 you use the shared-account route, the token. Click **Set up / update remote**.
 This creates the local `sync_repo/` folder, commits the first state, and
-pushes it to GitHub.
+pushes it to GitHub. The URL and token are then remembered on this machine
+only (a hidden `.hub_credentials.json` next to the toolchain, never uploaded)
+and pre-filled the next time you open the hub — clear them any time with
+**Clear saved URL & token**.
 
 **2 · Member accounts**
 Create one account per member: username + password (≥ 4 characters). Passwords
@@ -106,7 +109,9 @@ python3 team_gui.py
 
 1. **Card 1** — paste the same repo URL (and token, if the shared-account
    route is used). The hub detects that the repo already has history and
-   **clones it automatically** instead of creating a new one.
+   **clones it automatically** instead of creating a new one. After the first
+   successful setup, both fields are remembered on that machine and pre-filled
+   on every later open.
 2. **Card 3** — log in with **your own** account and password.
 
 Nothing else is needed: your review queue is the whole pool minus what you
@@ -191,6 +196,7 @@ terminal (scriptable, useful over SSH):
   | `sync_repo/opinions/<name>.jsonl` | per-reviewer decisions, append-only |
   | `sync_repo/pool.json` | merged pool (derived, not committed) |
   | `sync_repo/.session.json` | who is logged in on this machine (not committed) |
+  | `.hub_credentials.json` (outside `sync_repo/`) | this machine's saved repo URL + token (never committed) |
   | `feed_candidates*/` | local collection stores (never committed) |
   | `review_frames/`, `review_videos/` | local frame evidence / downloads (never committed) |
 

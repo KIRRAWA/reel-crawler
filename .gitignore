@@ -15,5 +15,7 @@ review_frames/
 review_videos/
 # Multi-reviewer team sync (nested git repo; never tracked by the outer repo)
 sync_repo/
+# Team hub credential memory (repo URL + GitHub token for THIS machine -- never commit)
+.hub_credentials.json
 # macOS
 .DS_Store

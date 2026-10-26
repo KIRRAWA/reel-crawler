@@ -57,7 +57,7 @@ python3 team_gui.py        # 或：python3 review_team.py gui
 浏览器自动打开 **http://127.0.0.1:8766**——团队中心。从上到下填五张卡片：
 
 **1 · Shared GitHub repo（共享仓库）**
-粘贴仓库 URL（`https://github.com/<账号>/reel-review-sync`），走共用账号路线再粘贴 token。点 **Set up / update remote**。这会在本地创建 `sync_repo/` 文件夹、提交初始状态并推送到 GitHub。
+粘贴仓库 URL（`https://github.com/<账号>/reel-review-sync`），走共用账号路线再粘贴 token。点 **Set up / update remote**。这会在本地创建 `sync_repo/` 文件夹、提交初始状态并推送到 GitHub。之后 URL 和 token 只记在这台机器本地（工具目录旁的隐藏文件 `.hub_credentials.json`，绝不上传），下次打开团队中心会自动填好；想清除就点 **Clear saved URL & token**。
 
 **2 · Member accounts（成员账号）**
 给每位成员建账号：用户名+密码（至少 4 位）。密码只以加盐 PBKDF2 哈希形式存储并同步到 GitHub——明文永不离开本机。表格显示每个人的审阅进度。
@@ -76,7 +76,7 @@ cd reel-crawler
 python3 team_gui.py
 ```
 
-1. **卡片 1**——粘贴同一个仓库 URL（共用账号路线再粘 token）。团队中心检测到仓库已有历史，会**自动 clone** 而不是新建。
+1. **卡片 1**——粘贴同一个仓库 URL（共用账号路线再粘 token）。团队中心检测到仓库已有历史，会**自动 clone** 而不是新建。首次设置成功后，这两个字段就记在这台机器上，以后每次打开都自动填好。
 2. **卡片 3**——用**你自己的**账号密码登录。
 
 别的什么都不用做：你的审阅队列 = 整个视频池减去你已经审过的。
@@ -144,6 +144,7 @@ python3 team_gui.py            # 打开团队中心
   | `sync_repo/opinions/<名字>.jsonl` | 每位审阅者的决定，append-only |
   | `sync_repo/pool.json` | 合并池（派生文件，不入库） |
   | `sync_repo/.session.json` | 本机登录者（不入库） |
+  | `.hub_credentials.json`（在 `sync_repo/` 外面） | 本机记住的仓库 URL + token（绝不上传） |
   | `feed_candidates*/` | 本地采集存储（永不提交） |
   | `review_frames/`、`review_videos/` | 本地抽帧证据 / 下载（永不提交） |
 

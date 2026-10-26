@@ -9,10 +9,11 @@ One page for everything the team does together:
 
   * Shared repo setup -- point the sync repo at ONE GitHub repo. A single lab
     GitHub account is enough for the whole team: everyone pushes with the same
-    GitHub credential (paste its token once), and members are told apart by
-    their OWN account + password below -- git commits are authored with that
-    account name, so the history still shows who reviewed what. No need to add
-    every member as a GitHub collaborator.
+    GitHub credential (paste its token once -- the hub remembers it on this
+    machine and pre-fills it next time), and members are told apart by their
+    OWN account + password below -- git commits are authored with that account
+    name, so the history still shows who reviewed what. No need to add every
+    member as a GitHub collaborator.
   * Accounts -- create member accounts (only salted PBKDF2 hashes are stored,
     never plaintext passwords).
   * Login / logout -- password login on this machine.
@@ -25,6 +26,7 @@ Stdlib only. The review queue itself stays at http://127.0.0.1:8765
 
 import argparse
 import json
+import os
 import re
 import shutil
 import socket
@@ -39,6 +41,7 @@ from pathlib import Path
 import review_team as rt
 
 REVIEW_PORT = 8765
+SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -87,15 +90,16 @@ td.you{font-weight:700}
 
 <div class="card">
  <h2>1 · Shared GitHub repo <span class="badge" id="repo-badge"></span></h2>
- <p class="hint">One GitHub repo for the whole team. A single lab account is enough: paste its token once, and every member pushes with that same credential — people are told apart by their own account + password (step 2), and every git commit is authored with that account name. Leave the token empty to use this machine's own GitHub access instead (e.g. SSH).</p>
+ <p class="hint">One GitHub repo for the whole team. A single lab account is enough: paste its token once, and every member pushes with that same credential — people are told apart by their own account + password (step 2), and every git commit is authored with that account name. Leave the token empty to use this machine's own GitHub access instead (e.g. SSH). The URL and token are remembered on this machine only (never uploaded) and filled in automatically the next time you open the hub.</p>
  <div class="row"><div style="flex:2.4">
   <label for="repo-url">Repo URL (https:// or git@ — where the shared state lives)</label>
   <input type="text" id="repo-url" placeholder="https://github.com/lab-org/reel-review-sync">
  </div><div>
-  <label for="repo-token">GitHub token (optional — stored only in this machine's local git config)</label>
+  <label for="repo-token">GitHub token (optional — saved on this machine only, never uploaded)</label>
   <input type="text" id="repo-token" placeholder="ghp_…">
  </div></div>
  <button class="act" id="btn-setup">Set up / update remote</button>
+ <button class="act ghost" id="btn-forget">Clear saved URL &amp; token</button>
  <div class="msg" id="setup-msg"></div>
 </div>
 
@@ -154,13 +158,17 @@ const $=id=>document.getElementById(id);
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
+let tokenFilled=false;    // prefill the saved token only once per page load
 async function refresh(){
  const s=await api('/api/state');
  if(s.error){msg('setup-msg',s.error);return;}
  $('hdr').textContent='pool: '+s.pool_total+' videos · stores: '+(s.stores.join(', ')||'none');
  $('banner').style.display=s.initialized?'none':'';
  $('repo-badge').textContent=s.initialized?(s.remote?'connected':'no remote yet'):'not initialized';
- $('repo-url').value=s.remote||'';
+ const saved=s.saved||{};
+ if(!$('repo-url').value)$('repo-url').value=saved.url||s.remote||'';
+ if(!tokenFilled&&!$('repo-token').value)$('repo-token').value=saved.token||'';
+ tokenFilled=true;
  const tb=$('acc-table').querySelector('tbody');tb.innerHTML='';
  s.accounts.forEach(a=>{const tr=document.createElement('tr');
   tr.innerHTML='<td'+(a.name===s.session?' class="you"':'')+'>'+esc(a.name)+(a.name===s.session?' (you)':'')+'</td>'
@@ -185,6 +193,7 @@ async function refresh(){
 }
 $('btn-setup').onclick=async()=>{const r=await api('/api/setup',{url:$('repo-url').value.trim(),token:$('repo-token').value.trim()});
  msg('setup-msg',r.error||r.message,r.ok);if(r.ok){$('repo-token').value='';refresh();}};
+$('btn-forget').onclick=async()=>{const r=await api('/api/forget');$('repo-token').value='';msg('setup-msg',r.error||r.message,r.ok);refresh();};
 $('btn-create').onclick=async()=>{
  const pw=$('new-pw').value,pw2=$('new-pw2').value;
  if(pw!==pw2){msg('acc-msg','Passwords do not match.');return;}
@@ -230,6 +239,20 @@ refresh();
 # actions (mirror the review_team.py CLI, with human-readable results)
 # --------------------------------------------------------------------------
 
+def load_secrets():
+    try:
+        return json.loads(SECRETS.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def save_secrets(url, token):
+    """Remember the repo URL + token on this machine (0600, never committed)."""
+    fd = os.open(str(SECRETS), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump({'url': url, 'token': token}, f)
+
+
 def state():
     sess = rt.session_user()
     p = rt.pool() if rt.SYNC.is_dir() else {}
@@ -247,6 +270,7 @@ def state():
                 for r in rt.dispute_rows(p)] if p else []
     return {'initialized': rt.SYNC.is_dir() and (rt.SYNC / '.git').is_dir(),
             'remote': rt.config().get('remote', ''),
+            'saved': load_secrets(),
             'session': sess,
             'accounts': accounts,
             'pool_total': len(p),
@@ -290,10 +314,20 @@ def do_setup(url, token):
             if r2.returncode != 0:
                 raise RuntimeError('could not reach the remote (wrong token or URL?): '
                                    + (r2.stderr or '').strip()[-200:])
+            save_secrets(url, token)
             return ('Sync repo cloned from ' + url + ' -- ready to pull and push.')
+        save_secrets(url, token)
         return 'Sync repo created and pushed to ' + url + '.' + tail
     rt._push()
+    save_secrets(url, token)
     return 'Sync repo pointed at ' + url + '.' + tail
+
+
+def do_forget():
+    if SECRETS.exists():
+        SECRETS.unlink()
+        return 'Saved URL & token removed from this machine.'
+    return 'Nothing saved yet.'
 
 
 def do_create(name, pw):
@@ -420,6 +454,8 @@ class Handler(BaseHTTPRequestHandler):
             path = self.path.split('?')[0]
             if path == '/api/setup':
                 result = do_setup(data.get('url'), data.get('token'))
+            elif path == '/api/forget':
+                result = do_forget()
             elif path == '/api/create':
                 result = do_create(str(data.get('name') or ''), str(data.get('pw') or ''))
             elif path == '/api/login':
