@@ -120,7 +120,13 @@ def capture_link(url, frames_dir='review_frames', n=10, force=False):
         raise RuntimeError(f'not a reel URL: {url}')
     out_dir = Path(frames_dir) / code
     if (out_dir / 'meta.json').exists() and not force:
-        return 0    # already captured -- nothing to do
+        try:
+            existing = len(json.loads((out_dir / 'meta.json').read_text(
+                encoding='utf-8')).get('frames', []))
+        except Exception:
+            existing = 0
+        if existing >= n:
+            return 0    # already has enough frames -- nothing to do
     with tempfile.TemporaryDirectory(prefix='review-cap-') as folder:
         path = download_video(url, folder)
         duration, saved = collect_frames_even(path, out_dir, n)
@@ -149,8 +155,14 @@ def capture_row(row, args):
     code = shortcode(row['url'])
     out_dir = Path(args.frames) / code
     if (out_dir / 'meta.json').exists() and not args.force:
-        print(f'{code}: already captured, skipping (--force to redo)')
-        return
+        try:
+            existing = len(json.loads((out_dir / 'meta.json').read_text(
+                encoding='utf-8')).get('frames', []))
+        except Exception:
+            existing = 0
+        if existing >= args.n:
+            print(f'{code}: already has {existing} frames, skipping (--force to redo)')
+            return
     visuals = json.loads(row['visual_json'] or '[]')
     print(f'{code}: downloading video...')
     with tempfile.TemporaryDirectory(prefix='review-cap-') as folder:
