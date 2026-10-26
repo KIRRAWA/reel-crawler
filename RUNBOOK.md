@@ -84,6 +84,8 @@ re-downloaded from their URLs when a reviewer needs to watch one.
 
 ### The easy way — the team hub GUI (covers everything below)
 
+Full step-by-step walkthrough: **TEAM-TUTORIAL.md**.
+
 ```bash
 python team_gui.py        # or: python review_team.py gui  ->  http://127.0.0.1:8766
 ```

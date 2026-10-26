@@ -26,6 +26,7 @@ Stdlib only. The review queue itself stays at http://127.0.0.1:8765
 import argparse
 import json
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -242,7 +243,7 @@ def do_setup(url, token):
     url = (url or '').strip()
     if not url:
         raise ValueError('Paste the GitHub repo URL first.')
-    if not re.fullmatch(r'https?://\S+|git@\S+:\S+', url):
+    if not re.fullmatch(r'(?:https?|ssh|git|file)://\S+|git@\S+:\S+', url):
         raise ValueError('Repo URL should look like https://github.com/org/repo '
                          'or git@github.com:org/repo')
     token = (token or '').strip()
@@ -262,10 +263,22 @@ def do_setup(url, token):
     rt._git_cfg(rt.session_user() or 'admin')
     rt.git(['add', 'config.json'])
     rt.git(['commit', '-m', 'sync: set shared repo remote'], check=False)
+    tail = ' Token stored only in this machine\'s local git config.' if token else ''
+    if created:
+        # Fresh local repo: push it up. If the remote rejects the push, another
+        # machine already set the shared repo up -- start from a clone instead.
+        r = rt.git(['push', '-u', 'origin', 'main'], check=False)
+        if r.returncode != 0:
+            shutil.rmtree(str(rt.SYNC))
+            r2 = subprocess.run(['git', '-C', str(rt.ROOT), 'clone', cred, 'sync_repo'],
+                                env=rt.git_env(), capture_output=True, text=True)
+            if r2.returncode != 0:
+                raise RuntimeError('could not reach the remote (wrong token or URL?): '
+                                   + (r2.stderr or '').strip()[-200:])
+            return ('Sync repo cloned from ' + url + ' -- ready to pull and push.')
+        return 'Sync repo created and pushed to ' + url + '.' + tail
     rt._push()
-    return ('Sync repo ' + ('created and ' if created else '') + 'pointed at '
-            + url + '.' + (' Token stored only in this machine\'s local git config.'
-                           if token else ''))
+    return 'Sync repo pointed at ' + url + '.' + tail
 
 
 def do_create(name, pw):
