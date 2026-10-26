@@ -61,6 +61,8 @@ input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:8
 button.act{background:#2f6fed;color:#fff;border:none;border-radius:8px;padding:9px 18px;font:600 14px system-ui;cursor:pointer;margin-top:12px}
 button.act.ghost{background:#f0f4fa;color:#2f6fed;border:1px solid #c9d9f4}
 button.act:disabled{opacity:.5;cursor:default}
+a.act{display:inline-block;background:#2f6fed;color:#fff;border:none;border-radius:8px;padding:9px 18px;font:600 14px system-ui;cursor:pointer;margin-top:12px;text-decoration:none}
+a.act.ghost{background:#f0f4fa;color:#2f6fed;border:1px solid #c9d9f4}
 table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e8edf5}
 th{color:#5b6b80;font-weight:600;font-size:12px}
@@ -77,7 +79,7 @@ td.you{font-weight:700}
  <span class="muted" id="hdr">localhost only</span>
  <span style="flex:1"></span>
  <span class="muted" id="who"></span>
- <button id="btn-review-top" style="display:none">Open review queue →</button>
+ <a id="btn-review-top" class="act" style="display:none;padding:5px 14px;font-size:13px" target="_blank">Open review queue →</a>
  <button id="btn-logout" style="display:none">Log out</button>
 </header>
 <div id="banner" style="display:none">First run: set up the shared repo (step 1), create the member accounts (step 2), then each person logs in with their own password (step 3).</div>
@@ -126,7 +128,7 @@ td.you{font-weight:700}
  </div>
  <div id="login-done" style="display:none">
   <div class="msg ok" id="login-who"></div>
-  <button class="act" id="btn-review">Open review queue →</button>
+  <a id="btn-review" class="act" target="_blank">Open review queue →</a>
   <button class="act ghost" id="btn-passwd">Change my password</button>
  </div>
  <div class="msg" id="login-msg"></div>
@@ -134,9 +136,9 @@ td.you{font-weight:700}
 
 <div class="card">
  <h2>4 · Sync <span class="badge" id="sync-badge"></span></h2>
- <p class="hint">Pull before reviewing, push after — the review queue pushes automatically after every decision, so this is mostly for collecting new videos or checking progress.</p>
- <button class="act ghost" id="btn-pull">Sync now: pull</button>
- <button class="act ghost" id="btn-push">Sync now: push</button>
+ <p class="hint">Sync: online → this machine = download everyone's latest videos and reviews. Sync: this machine → online = upload yours. The review queue pushes automatically after every decision, so these are mainly for collecting or checking progress.</p>
+ <button class="act ghost" id="btn-pull">Sync: online → this machine</button>
+ <button class="act ghost" id="btn-push">Sync: this machine → online</button>
  <div class="msg" id="sync-msg"></div>
 </div>
 
@@ -188,29 +190,38 @@ $('btn-create').onclick=async()=>{
  if(pw!==pw2){msg('acc-msg','Passwords do not match.');return;}
  const r=await api('/api/create',{name:$('new-name').value.trim(),pw});
  msg('acc-msg',r.error||r.message,r.ok);if(r.ok){$('new-name').value='';$('new-pw').value='';$('new-pw2').value='';refresh();}};
+const RP=8765,RQ='http://127.0.0.1:'+RP+'/';
+function tryOpen(url){try{const w=window.open(url,'_blank');return !(!w||w.closed);}catch(e){return false;}}
+function ensureReview(){fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{});}
 async function afterLogin(r){
  if(r.ok){
   msg('login-msg',r.message,true);
   if($('li-open').checked){
    const q=await api('/api/review');
    if(q.error){msg('login-msg','Logged in, but the review queue could not be opened: '+q.error);}
-   else setTimeout(()=>window.open('http://127.0.0.1:'+q.port,'_blank'),q.launch?1400:0);
+   else setTimeout(()=>{if(!tryOpen(RQ))msg('login-msg','Your browser blocked the pop-up — click "Open review queue →" above instead.',true);},300);
   }
  }else msg('login-msg',r.error||r.message);
  refresh();}
 $('btn-login').onclick=async()=>afterLogin(await api('/api/login',{name:$('li-name').value.trim(),pw:$('li-pw').value}));
 $('li-pw').addEventListener('keydown',async e=>{if(e.key==='Enter')afterLogin(await api('/api/login',{name:$('li-name').value.trim(),pw:$('li-pw').value}));});
 $('btn-logout').onclick=async()=>{await api('/api/logout');$('li-pw').value='';refresh();};
-async function openReview(){const q=await api('/api/review');
- if(q.error)msg('login-msg',q.error);else setTimeout(()=>window.open('http://127.0.0.1:'+q.port,'_blank'),q.launch?1400:0);}
-$('btn-review').onclick=openReview;
-$('btn-review-top').onclick=openReview;
+async function manualOpen(e){
+ if(e.ctrlKey||e.metaKey||e.button===1){ensureReview();return;}   // native open (server is kept running)
+ e.preventDefault();
+ const q=await api('/api/review');
+ if(q.error){msg('login-msg',q.error);return;}
+ if(!tryOpen(RQ))window.location.href=RQ;    // pop-up blocked: open in this tab (Back returns here)
+}
+$('btn-review').onclick=manualOpen;
+$('btn-review-top').onclick=manualOpen;
 $('btn-passwd').onclick=async()=>{
  const old=prompt('Current password:'),nu=prompt('New password (at least 4 characters):');
  if(old===null||nu===null)return;
  const r=await api('/api/password',{old,nu});msg('login-msg',r.error||r.message,r.ok);};
-$('btn-pull').onclick=async()=>{const r=await api('/api/sync',{action:'pull'});msg('sync-msg',r.error||r.message,r.ok);refresh();};
-$('btn-push').onclick=async()=>{const r=await api('/api/sync',{action:'push'});msg('sync-msg',r.error||r.message,r.ok);refresh();};
+async function doSync(action,btn){btn.disabled=true;const r=await api('/api/sync',{action});btn.disabled=false;msg('sync-msg',r.error||r.message,r.ok);refresh();}
+$('btn-pull').onclick=e=>doSync('pull',e.target);
+$('btn-push').onclick=e=>doSync('push',e.target);
 refresh();
 </script></body></html>'''
 
@@ -452,6 +463,13 @@ def main():
             webbrowser.open(url)
         return
     url = f'http://127.0.0.1:{args.port}'
+    if rt.session_user() and not _port_open(REVIEW_PORT):
+        # Someone is logged in on this machine: have the review queue ready
+        # before the page loads, so its open button works instantly.
+        subprocess.Popen([sys.executable, str(rt.ROOT / 'review_gui.py'),
+                          '--no-browser'],
+                         cwd=str(rt.ROOT), start_new_session=True)
+        print('Review queue started in the background (already logged in).')
     print(f'Team hub: {url}   (review queue lives on port {REVIEW_PORT})')
     print('Ctrl-C to quit.')
     if not args.no_browser:

@@ -89,7 +89,8 @@ Log in with your own account. If "Open the review queue right after login" is
 checked, the review page (http://127.0.0.1:8765) opens automatically. The
 checkbox only appears on the login form — once you are logged in, card 3
 shows an **Open review queue →** button instead (same effect), and the page
-header keeps the same button at all times.
+header keeps the same button at all times. If your browser blocks the
+automatic pop-up, just click that button — the manual link always works.
 
 That is the entire setup. The other cards are used every day (section 5).
 
@@ -117,8 +118,10 @@ have already reviewed.
 python3 team_gui.py            # the hub opens
 ```
 
-- **Card 4 · Sync** — click **pull** before you start (also happens on login)
-  so you see everything collected and reviewed since yesterday.
+- **Card 4 · Sync** — click **Sync: online → this machine** before you start
+  (login does this automatically) so you see everything collected and
+  reviewed since yesterday. **Sync: this machine → online** uploads your
+  changes.
 - **Card 3** — click **Open review queue** (or log in with the checkbox).
 - In the review queue, keyboard only:
 

@@ -63,7 +63,7 @@ python3 team_gui.py        # 或：python3 review_team.py gui
 给每位成员建账号：用户名+密码（至少 4 位）。密码只以加盐 PBKDF2 哈希形式存储并同步到 GitHub——明文永不离开本机。表格显示每个人的审阅进度。
 
 **3 · Log in（登录）**
-用你自己的账号登录。勾选 "Open the review queue right after login" 的话，审阅页（http://127.0.0.1:8765）会自动打开。注意：**勾选框只在未登录的登录表单里出现**——已经登录时，卡片 3 显示的是 **Open review queue →** 按钮，点它效果完全一样；页面顶部也常驻同一个按钮。
+用你自己的账号登录。勾选 "Open the review queue right after login" 的话，审阅页（http://127.0.0.1:8765）会自动打开。注意：**勾选框只在未登录的登录表单里出现**——已经登录时，卡片 3 显示的是 **Open review queue →** 按钮，点它效果完全一样；页面顶部也常驻同一个按钮。如果浏览器拦截了自动弹窗，点这个按钮即可——手动链接永远有效。
 
 配置到此结束。其余卡片每天用（第 5 节）。
 
@@ -87,7 +87,7 @@ python3 team_gui.py
 python3 team_gui.py            # 打开团队中心
 ```
 
-- **卡片 4 · Sync**——开审前点 **pull**（登录时也会自动拉），拿到昨天以来所有人采集和审阅的内容。
+- **卡片 4 · Sync**——开审前点 **Sync: online → this machine**（登录时也会自动拉），拿到昨天以来所有人采集和审阅的内容；**Sync: this machine → online** 把你本机的改动传上去。
 - **卡片 3**——点 **Open review queue**（或登录时勾选自动打开）。
 - 审阅队列里只靠键盘：
 
