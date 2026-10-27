@@ -135,8 +135,9 @@ python3 team_gui.py            # the hub opens
 - The review page works like an exam paper:
   - A **sidebar** on the left lists every video, split into **Not decided
     yet** and **Decided** — click any entry to jump to that video.
-  - **← Prev / Next →** (keys `p` / `n`) walk the whole list so you can
-    skip a video and come back to it later.
+  - **← Prev / Next →** (keys `p` / `n`, or `↑` / `↓`) walk the whole list
+    so you can skip a video and come back to it later — the list wraps
+    around: past the last video is the first one again.
   - Keyboard:
 
   | Key | Action |
@@ -145,7 +146,7 @@ python3 team_gui.py            # the hub opens
   | `w` | reject the video |
   | `r` | choose a category (keys `1`–`12`) and approve |
   | `u` | undo the last decision |
-  | `p` / `n` | previous / next video |
+  | `p` / `n`, `↑` / `↓` | previous / next video (wraps around at the ends) |
   | `s` | submit all decisions at once |
   | `←`/`→` | focus the frame evidence |
 

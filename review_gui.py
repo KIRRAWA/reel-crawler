@@ -8,7 +8,8 @@ Serves a local page listing every review item that has frame evidence
   r      choose a category (keys 1-12 or click) and approve with it
   u      undo the last decision
   <- / -> move frame focus
-  p / n  previous / next video (walks the whole list, like an exam)
+  p / n, up/down  previous / next video (walks the whole list and wraps
+  around at the ends, like an exam)
   s      submit: upload all decisions to the shared repo in one go
 Decisions are written back into <store>/feed_collection.sqlite (the model's
 original verdict is preserved inside the new reason for audit) and the CSVs
@@ -121,7 +122,7 @@ body.no-side #side{display:none}
 <div id="meta"><div id="caption"></div><div id="reason"></div><div id="transcript" class="transcript"></div></div>
 <div id="frames"></div>
 </div>
-<div id="help">Keys: <kbd>g</kbd> approve &middot; <kbd>w</kbd> reject &middot; <kbd>r</kbd> choose category (<kbd>1</kbd>-<kbd>12</kbd>) &middot; <kbd>u</kbd> undo &middot; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> focus frame &middot; <kbd>p</kbd>/<kbd>n</kbd> prev/next video &middot; <kbd>s</kbd> submit</div>
+<div id="help">Keys: <kbd>g</kbd> approve &middot; <kbd>w</kbd> reject &middot; <kbd>r</kbd> choose category (<kbd>1</kbd>-<kbd>12</kbd>) &middot; <kbd>u</kbd> undo &middot; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> focus frame &middot; <kbd>p</kbd>/<kbd>n</kbd> <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> prev/next video (wraps) &middot; <kbd>s</kbd> submit</div>
 <div id="modal" class="hidden"><div id="modalbox"><h3>Choose a category</h3><div class="cats" id="cats"></div></div></div>
 <script>
 const CATS=['comedy','animals','food','sports_fitness','travel_nature','everyday_life','art_diy','science_technology','beauty_fashion','music_dance','gaming','other'];
@@ -206,7 +207,8 @@ async function decide(action,category){
  }else document.body.innerHTML='<div class="done">Queue complete ✓</div>';}
 function step(dir){
  if(!ORDER.length||!CUR)return;
- const i=ORDER.indexOf(CUR.code),j=Math.min(ORDER.length-1,Math.max(0,i+dir));
+ const i=ORDER.indexOf(CUR.code);
+ const j=(i+dir+ORDER.length)%ORDER.length;   // wraps: first -> last, last -> first
  if(j!==i)load(ORDER[j]);}
 function openModal(){$('modal').classList.remove('hidden');const c=$('cats');c.innerHTML='';
  CATS.forEach((name,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' '+name;
@@ -231,8 +233,8 @@ document.addEventListener('keydown',e=>{
  else if(e.key==='w')decide('reject');
  else if(e.key==='r')openModal();
  else if(e.key==='u'){api('/api/undo').then(async r=>{await refreshList();if(r.code)load(r.code);});}
- else if(e.key==='n')step(1);
- else if(e.key==='p')step(-1);
+ else if(e.key==='n'||e.key==='ArrowDown')step(1);
+ else if(e.key==='p'||e.key==='ArrowUp')step(-1);
  else if(e.key==='s')submitAll();
  else if(e.key==='ArrowRight'&&CUR.item.frames.length){SEL=Math.min(SEL+1,CUR.item.frames.length-1);select();}
  else if(e.key==='ArrowLeft'){SEL=Math.max(SEL-1,0);select();}
