@@ -37,3 +37,14 @@ to modify our lab data, should be kept within our lab)
 - Items without local frames: open the reel link and decide from the video
   itself.
 - Details and edge cases: [TEAM-TUTORIAL.md](TEAM-TUTORIAL.md).
+
+**Windows notes**
+
+- Use `python team_gui.py` (not `python3`). Install Python from python.org
+  with "Add Python to PATH" checked, and install Git for Windows.
+- Keep the tool folder OUT of synced or watched folders (OneDrive, Dropbox,
+  or the Claude Desktop files folder). Sync engines, antivirus, and indexers
+  lock `.git/objects` files mid-operation, which makes setup fail with
+  "WinError 5 access denied" and then "not a git repository".
+- If a failed setup leaves a `sync_repo` folder behind, delete it (Explorer,
+  or `rmdir /s /q sync_repo` in cmd) and retry.
