@@ -149,9 +149,24 @@ python review_team.py status                 # everyone's progress
 python review_team.py disputes               # table of videos reviewers disagree on
 ```
 
+Any member can also FIND new videos on their own machine and feed the pool
+automatically:
+
+```bash
+pip install -r requirements.txt && playwright install chromium   # once
+python feed_collector.py --login          # once: YOUR Instagram account (saves cookies)
+python review_team.py login <name>        # team account — this name signs your items
+python feed_collector.py --target 100 --output feed_candidates_mine
+#   -> new videos auto-join the pool at the end of every run
+```
+
 Notes:
-- `feed_collector.py` auto-pushes new items after every run (skipped silently
-  on failure, so offline collection still works).
+- `feed_collector.py` auto-pushes new items after every run when the shared
+  repo is set up (card 1) and you are logged in; otherwise it prints what to
+  do, and the videos stay local until your next successful sync — offline
+  collection still works, nothing is lost.
+- Card 6 in the hub (or `pool add`) stays the lightweight way to hand-pick
+  single links without collector dependencies.
 - `review_gui.py` auto-pulls at startup and pushes after every decision.
 - Undo rewrites the opinion file; historical opinion lines are kept.
 - Disputes = a video where reviewers disagree (reject vs accept, or different

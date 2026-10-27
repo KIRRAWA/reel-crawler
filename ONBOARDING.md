@@ -36,6 +36,9 @@ to modify our lab data, should be kept within our lab)
   repo and your progress is visible to the whole team.
 - Items without local frames: open the reel link and decide from the video
   itself.
+- Found reels the team should review? Add them in the hub (card 6: paste
+  links, one per line), or find new ones with the collector — both are
+  covered in [TEAM-TUTORIAL.md](TEAM-TUTORIAL.md) §5.
 - Details and edge cases: [TEAM-TUTORIAL.md](TEAM-TUTORIAL.md).
 
 **Windows notes**
