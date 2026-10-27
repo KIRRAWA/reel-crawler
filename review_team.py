@@ -387,8 +387,13 @@ def _ig_metadata(url):
         os.environ.update(saved)
     if not info:
         return None
-    return (info.get('uploader'), info.get('like_count'),
-            info.get('title'), info.get('duration'))
+    uploader = info.get('uploader') or info.get('channel')
+    title = info.get('title')
+    if title and str(title).startswith('Video by '):
+        # yt-dlp's fallback title for a reel without a caption -- the real
+        # caption (when there is one) comes back in 'description'.
+        title = info.get('description')
+    return (uploader, info.get('like_count'), title, info.get('duration'))
 
 
 def pool_enrich(codes=None):
@@ -429,9 +434,9 @@ def pool_enrich(codes=None):
             fields['username'] = username
         if isinstance(likes, int):
             fields['likes'] = likes
-        # yt-dlp's title for a reel without a caption is the placeholder
-        # "Video by <uploader>" -- keep the real captions, skip that.
-        if caption and not str(caption).startswith('Video by '):
+        # Fill the caption when it is missing, or replace a placeholder
+        # ("Video by X") that an earlier version stored.
+        if caption and not str(item.get('caption') or '').startswith('Video by '):
             fields['caption'] = str(caption)[:200]
         if duration:
             fields['duration_seconds'] = duration
