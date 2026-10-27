@@ -119,7 +119,7 @@ python3 team_gui.py            # 打开团队中心
 最简单的方式是团队中心的**卡片 7 · Collect new reels**——一条命令（`python3 review_team.py collect`，或 `python3 team_gui.py` 后往下滚）打开清单：
 
 1. **Collector dependencies（采集器依赖）**——没打勾时卡片会显示需要跑的那一条命令（`pip install -r requirements.txt`），装完点 **Re-check**。
-2. **Instagram login（Instagram 登录）**——点 **Open Instagram login**：弹出浏览器窗口打开 Instagram，你手动登录（用干净账号——feed 没被训练成单一主题的），登录一被检测到会话就自动保存——勾自己会出现。
+2. **Instagram login（Instagram 登录）**——点 **Open Instagram login**：弹出浏览器窗口打开 Instagram，你手动登录（用干净账号——feed 没被训练成单一主题的），登录一被检测到会话就自动保存——勾自己会出现。这个勾是真实校验：会检查有效的 session cookie；之前保存的登录过期时，卡片会红字警告并取消打勾——重新点按钮登录即可（不打勾就无法 Start）。
 3. **Team login（团队登录）**——用你自己的账号登录（卡片上直接登录，或卡片 3）；池里你的贡献就以这个名字署名。
 
 然后设定采多少条、每条视频在屏幕上停留多少秒（固定停留——每条视频得到同样的观看时长），按 **Start collection**——三个勾全绿按钮才会亮。之后采集器全自动驾驶：自动刷 feed、结束时保存 frame info，并把视频推进全员的审阅队列。跑完以后它还会自动做两件事：

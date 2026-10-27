@@ -198,7 +198,10 @@ opens the checklist:
 2. **Instagram login** — click **Open Instagram login**: a browser window
    opens on Instagram, you log in there manually (use a clean account whose
    feed has not been trained toward one topic), and the session saves
-   itself once the login registers — the tick appears by itself.
+   itself once the login registers — the tick appears by itself. The tick
+   is real: it checks for a live session cookie, and when a saved login has
+   expired the card warns in red and un-ticks the step — click the button
+   and sign in again (no tick, no Start).
 3. **Team login** — log in with your own account (inline on the card, or
    card 3); this is the name your contributions carry in the pool.
 

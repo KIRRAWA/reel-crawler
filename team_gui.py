@@ -43,7 +43,7 @@ import review_team as rt
 
 REVIEW_PORT = 8765
 SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
-PAGE_VERSION = '2026-10-27.3'                 # bump to make stale tabs show a reload hint
+PAGE_VERSION = '2026-10-27.4'                 # bump to make stale tabs show a reload hint
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -215,7 +215,7 @@ button.sm{padding:4px 10px;font-size:12px;margin-top:0}
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const PAGEV='2026-10-27.3';
+const PAGEV='2026-10-27.4';
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
@@ -328,7 +328,23 @@ async function pollCollect(){
  const dh=$('deps-help');
  dh.textContent=pre.deps?'':('Missing. In the tool folder run:  pip install -r requirements.txt  then Re-check. ('+esc(pre.deps_msg||'')+')');
  dh.style.display=pre.deps?'none':'';
- $('ig-help').textContent=s.phase==='login'?'Browser open — log in there; cookies save automatically.':'';
+ const ih=$('ig-help');
+ if(s.phase==='login'){
+  ih.textContent='Browser open — log in there; cookies save automatically.';
+  ih.style.color='';
+ }else if(s.running){
+  ih.textContent='Locked while the collector runs — press Stop, then open Instagram login.';
+  ih.style.color='';
+ }else if(s.ig_expired&&pre.ig_msg){
+  ih.textContent='Instagram asked for a login during the last run — the saved session is no longer valid. Click Open Instagram login and sign in with the clean account.';
+  ih.style.color='#c33';
+ }else if(pre.ig_msg){
+  ih.textContent=pre.ig_msg+' Click Open Instagram login and sign in.';
+  ih.style.color='#c33';
+ }else{
+  ih.textContent='';
+  ih.style.color='';
+ }
  $('team-who').textContent=pre.team?('— logged in as '+pre.team):'';
  $('collect-login').style.display=pre.team?'none':'';
  const running=!!s.running;
@@ -343,8 +359,13 @@ async function pollCollect(){
  if(s.log!==undefined){lg.textContent=s.log;lg.scrollTop=lg.scrollHeight;}
  lg.style.display=(s.log||running)?'':'none';
 }
-$('btn-deps-check').onclick=pollCollect;
-$('btn-ig-login').onclick=async()=>{const r=await api('/api/ig_login');msg('collect-msg',r.error||r.message,r.ok);};
+$('btn-deps-check').onclick=async()=>{
+ await pollCollect();
+ const s=await api('/api/collect_state');
+ const p=(s&&s.prereqs)||{};
+ msg('collect-msg','Checks re-run: dependencies '+(p.deps?'✓':'✗')+' · Instagram login '+(p.ig?'✓':'✗ — sign in again')+' · team login '+(p.team?'✓ ('+p.team+')':'✗'),!!(p.deps&&p.ig&&p.team));
+};
+$('btn-ig-login').onclick=async()=>{const r=await api('/api/ig_login');msg('collect-msg',r.error||r.message,r.ok);pollCollect();};
 $('btn-cl-login').onclick=async()=>{
  const r=await api('/api/login',{name:$('cl-name').value.trim(),pw:$('cl-pw').value});
  if(r.ok){$('cl-pw').value='';msg('collect-msg',r.message,true);}else msg('collect-msg',r.error||r.message);
@@ -631,15 +652,35 @@ def _spawn_collector(args, phase, on_exit=None):
 
 
 def collect_prereqs():
-    """The three checkmarks: collector deps, Instagram login, team login."""
+    """The three checkmarks: collector deps, Instagram login, team login.
+
+    The Instagram check looks for a real session cookie (sessionid) inside
+    cookies.txt, not just the file: a profile whose login expired still has
+    the file, and the collector would then browse logged-out and hit
+    Instagram's login wall after a few reels.
+    """
     deps, deps_msg = True, ''
     try:
         import playwright  # noqa: F401
         import faster_whisper  # noqa: F401
     except Exception as exc:
         deps, deps_msg = False, f'{type(exc).__name__}: {exc}'
-    return {'deps': deps, 'deps_msg': deps_msg,
-            'ig': (IG_PROFILE / 'cookies.txt').is_file(),
+    ig = False
+    ig_msg = ''
+    jar = IG_PROFILE / 'cookies.txt'
+    if jar.is_file():
+        try:
+            has_sid = any(line.startswith('sessionid\t') and len(line.split('\t')[-1]) > 10
+                          for line in jar.read_text(encoding='utf-8').splitlines())
+        except Exception:
+            has_sid = False
+        if has_sid:
+            ig = True
+        else:
+            ig_msg = 'The saved Instagram login has expired (no session cookie).'
+    else:
+        ig_msg = 'No Instagram login saved yet.'
+    return {'deps': deps, 'deps_msg': deps_msg, 'ig': ig, 'ig_msg': ig_msg,
             'team': rt.session_user()}
 
 
@@ -806,8 +847,12 @@ class Handler(BaseHTTPRequestHandler):
                 log = '\n'.join(_COLLECT['log'][-200:])
                 phase = _COLLECT['phase']
                 running = _COLLECT['proc'] is not None and _COLLECT['proc'].poll() is None
+            pre = collect_prereqs()
+            # When the last run hit Instagram's login wall, say so on the card:
+            # the saved session is dead even though cookies.txt exists.
+            ig_expired = 'Login/challenge detected' in log
             self.send_json({'ok': True, 'phase': phase, 'running': running,
-                            'log': log, 'prereqs': collect_prereqs()})
+                            'log': log, 'prereqs': pre, 'ig_expired': ig_expired})
             return
         self.send_error(404)
 
