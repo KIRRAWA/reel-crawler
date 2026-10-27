@@ -33,6 +33,7 @@ Workflow:
   ... collect (feed_collector.py) / review (review_gui.py) ...
   python review_team.py sync push                  # after reviewing/collecting
   python review_team.py pool add <reel-url> ...    # hand-add videos for everyone
+  python review_team.py collect                    # hub card 7: find new reels (auto-pilot)
   python review_team.py status                     # everyone's progress
   python review_team.py disputes                   # videos reviewers disagree on
 """
@@ -690,6 +691,8 @@ def main():
     pa.add_argument('--likes', type=int, default=None, help='like count shown on the cards (optional)')
     sub.add_parser('gui', help='open the browser-based team hub (team_gui.py): '
                                'setup, accounts, login, sync, progress')
+    sub.add_parser('collect', help='open the team hub on the collect card '
+                                   '(card 7): find new reels for the pool')
     args = ap.parse_args()
 
     try:
@@ -722,6 +725,10 @@ def main():
             subprocess.Popen([sys.executable, str(ROOT / 'team_gui.py')],
                              cwd=str(ROOT), start_new_session=True)
             print('Team hub opened in your browser (team_gui.py).')
+        elif args.cmd == 'collect':
+            subprocess.Popen([sys.executable, str(ROOT / 'team_gui.py'), '--collect'],
+                             cwd=str(ROOT), start_new_session=True)
+            print('Team hub opened on the collect card (card 7).')
     except RuntimeError as exc:
         sys.exit(f'Error: {exc}')
     except KeyboardInterrupt:

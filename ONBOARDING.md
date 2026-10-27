@@ -37,8 +37,10 @@ to modify our lab data, should be kept within our lab)
 - Items without local frames: open the reel link and decide from the video
   itself.
 - Found reels the team should review? Add them in the hub (card 6: paste
-  links, one per line), or find new ones with the collector — both are
-  covered in [TEAM-TUTORIAL.md](TEAM-TUTORIAL.md) §5.
+  links, one per line), or find new ones with the collector — card 7
+  (`python review_team.py collect`) runs it on autopilot: tick
+  dependencies + Instagram login + team login, set target + dwell, press
+  Start. Both are covered in [TEAM-TUTORIAL.md](TEAM-TUTORIAL.md) §5.
 - Details and edge cases: [TEAM-TUTORIAL.md](TEAM-TUTORIAL.md).
 
 **Windows notes**

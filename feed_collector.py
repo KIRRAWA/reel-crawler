@@ -428,8 +428,24 @@ def run(args,store,asr,run_id,counters):
         try:
             if args.login:
                 page.goto('https://www.instagram.com/',wait_until='domcontentloaded')
-                input('Log in manually. Return here and press Enter once logged in: ')
+                print('A browser window opened on Instagram -- log in there manually.',flush=True)
+                print('Waiting for the login to register (a session cookie)...',flush=True)
+                wait=0
+                try:
+                    while True:
+                        try:
+                            cookies=context.cookies(['https://www.instagram.com/'])
+                        except Exception:
+                            cookies=[]
+                        if any(c['name']=='sessionid' and len(c.get('value') or '')>10 for c in cookies):
+                            break
+                        time.sleep(3); wait+=3
+                        if wait%30==0: print(f'  still waiting ({wait}s) -- finish the login in the browser window.',flush=True)
+                except KeyboardInterrupt:
+                    print('Login cancelled -- cookies were not saved.',flush=True)
+                    return
                 save_session_cookies(context,cookie_file)
+                print('Login detected -- session cookies saved to '+str(cookie_file),flush=True)
                 return
             # Collection NEVER screens in this branch: the original code screened
             # each new Reel inline while the browser sat on the feed, giving the

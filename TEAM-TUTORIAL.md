@@ -71,8 +71,8 @@ cd reel-crawler
 python3 team_gui.py        # or: python3 review_team.py gui
 ```
 
-Your browser opens **http://127.0.0.1:8766** — the team hub. Fill the six
-cards top to bottom:
+Your browser opens **http://127.0.0.1:8766** — the team hub. Fill the cards
+top to bottom:
 
 **1 · Shared GitHub repo**
 Paste the repo URL (`https://github.com/<account>/reel-review-sync`) and, if
@@ -106,6 +106,17 @@ member's review queue after their next pull — no collector run needed. Only
 public metadata (URL, @author, likes, caption) is shared; author, caption,
 and likes are optional and apply to all the lines at once. Use this for
 videos the team got outside the collector, e.g. downloaded locally.
+
+**7 · Collect new reels**
+The collector, turned into a three-step checklist. Every member can find
+new reels from their own machine: tick (1) collector dependencies, (2)
+Instagram login (a clean account whose feed has not been trained toward one
+topic), (3) team login — then set how many reels and how many seconds each
+one stays on screen, and the **Start collection** button lights up. The
+collector then drives itself: it browses the feed automatically, watches
+every reel for the same fixed time, saves frame info, and pushes the videos
+into everyone's queue. A live log shows its progress; **Stop** ends it any
+time. Details: section 5.
 
 That is the entire setup. The other cards are used every day (section 5).
 
@@ -175,27 +186,43 @@ python3 team_gui.py            # the hub opens
 
 ### Finding new reels for the pool (any member, optional)
 
-Reviewing needs no extra setup, but any member can also FIND new reels with
-the collector and hand them to the pool automatically:
+The easiest way is the hub's **card 7 · Collect new reels** — one command
+(`python3 review_team.py collect`, or `python3 team_gui.py` and scroll down)
+opens the checklist:
 
-1. Install the collector's dependencies once (Playwright + chromium):
-   `pip install -r requirements.txt && playwright install chromium`. Log in
-   to YOUR Instagram account once with `python3 feed_collector.py --login` —
-   it saves the login cookies on this machine.
-2. Log in to the team account too (`python3 review_team.py login <name>`) —
-   that is the name your contributions carry in the pool. The shared repo
-   must be set up on the machine (card 1); if it is not, the collector says
-   so at the end of a run.
-3. Run `python3 feed_collector.py --target <n> --output feed_candidates_mine`
-   to browse the feed. At the end of every run the new videos are pushed to
-   the shared repo automatically — every member's queue picks them up after
-   their next pull. (Without team setup or login the videos stay on your
-   machine and go up with your next successful sync — nothing is lost.)
-4. Prefer picking single videos by hand? Card 6 / `pool add` does that —
-   the collector is for discovering new videos from the feed.
+1. **Collector dependencies** — if the tick is missing, the card shows the
+   one command to run (`pip install -r requirements.txt`), then **Re-check**.
+2. **Instagram login** — click **Open Instagram login**: a browser window
+   opens on Instagram, you log in there manually (use a clean account whose
+   feed has not been trained toward one topic), and the session saves
+   itself once the login registers — the tick appears by itself.
+3. **Team login** — log in with your own account (inline on the card, or
+   card 3); this is the name your contributions carry in the pool.
 
-Collector and screening details: RUNBOOK.md. Read README.md for the
-collection policy (account hygiene, uniform dwell) before you run it.
+Then set how many reels to collect, how many seconds each reel stays on
+screen (uniform dwell — every reel gets the same watch time), and press
+**Start collection** — the button lights up only when all three ticks are
+green. The collector drives itself from there: it browses the feed
+automatically, saves frame info when the run finishes, and pushes the
+videos into everyone's review queue. Watch its progress in the live log on
+the card; **Stop** ends it any time. Collected videos that could not be
+synced (e.g. offline) stay on the machine and go up with the next
+successful sync — nothing is lost.
+
+Prefer the command line? The same steps work as plain commands:
+
+```bash
+pip install -r requirements.txt && playwright install chromium   # once
+python3 feed_collector.py --login          # opens Instagram, saves the login
+python3 review_team.py login <name>        # team account
+python3 feed_collector.py --target 100 --output feed_candidates_mine
+python3 feed_collector.py --rescreen --target 100 --output feed_candidates_mine --llm off
+```
+
+Prefer picking single videos by hand? Card 6 / `pool add` does that — the
+collector is for discovering new videos from the feed. Collector and
+screening details: RUNBOOK.md. Read README.md for the collection policy
+(account hygiene, uniform dwell) before you run it.
 
 ## 6. Command-line reference
 
@@ -215,6 +242,7 @@ terminal (scriptable, useful over SSH):
 | Print the merged pool | `python3 review_team.py pool` |
 | Add videos to the pool for everyone | `python3 review_team.py pool add <reel-link> [<more links>] [--username @u] [--caption text] [--likes N]` |
 | Open the team hub | `python3 review_team.py gui` |
+| Open the hub on the collect card | `python3 review_team.py collect` |
 | Review queue (team mode) | `python3 review_gui.py` |
 | Capture 10 frames for one reel | `python3 review_capture.py --url <reel-link>` |
 | Capture 10 frames for every pool video missing them | `python3 review_capture.py --pool` |

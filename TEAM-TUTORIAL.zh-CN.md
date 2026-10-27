@@ -54,7 +54,7 @@ cd reel-crawler
 python3 team_gui.py        # 或：python3 review_team.py gui
 ```
 
-浏览器自动打开 **http://127.0.0.1:8766**——团队中心。从上到下填六张卡片：
+浏览器自动打开 **http://127.0.0.1:8766**——团队中心。从上到下填卡片：
 
 **1 · Shared GitHub repo（共享仓库）**
 粘贴仓库 URL（`https://github.com/<账号>/reel-review-sync`），走共用账号路线再粘贴 token。点 **Set up / update remote**。这会在本地创建 `sync_repo/` 文件夹、提交初始状态并推送到 GitHub。之后 URL 和 token 只记在这台机器本地（工具目录旁的隐藏文件 `.hub_credentials.json`，绝不上传），下次打开团队中心会自动填好；想清除就点 **Clear saved URL & token**。
@@ -67,6 +67,9 @@ python3 team_gui.py        # 或：python3 review_team.py gui
 
 **6 · Add videos to the pool（往池子里加视频）**
 任何成员都可以给全组递视频：把 reel 链接一行一个粘进卡片 6，点 **Add to the pool**。这些视频在每位成员下次 pull 后自动进入他们的审阅队列——完全不需要跑采集器。只共享公开元数据（URL、@作者、点赞数、文案）；作者 / 文案 / 点赞数可选，且同一次对所有行生效。适用于团队在采集器之外拿到的视频，比如从本地下载的文件里挑出来的。
+
+**7 · Collect new reels（采集新视频）**
+采集器变成了三步清单。每位成员都可以从自己电脑上找新视频：依次打勾（1）采集器依赖、（2）Instagram 登录（用干净账号——feed 没被训练成单一主题的）、（3）团队登录——然后设定采多少条、每条在屏幕上停留多少秒，最底下的 **Start collection** 按钮就会亮起。之后采集器全自动驾驶：自动刷 feed、每条视频停留同样固定时长、保存 frame info，并把视频推进全员的审阅队列。卡片上有实时日志显示进度，随时可以 **Stop**。详见第 5 节。
 
 配置到此结束。其余卡片每天用（第 5 节）。
 
@@ -113,14 +116,25 @@ python3 team_gui.py            # 打开团队中心
 
 ### 找新视频进池（任何成员，可选）
 
-审阅无需任何额外安装，但任何成员也可以用采集器**发现**新视频，并自动递进全员审核池：
+最简单的方式是团队中心的**卡片 7 · Collect new reels**——一条命令（`python3 review_team.py collect`，或 `python3 team_gui.py` 后往下滚）打开清单：
 
-1. 一次性装好采集器依赖（Playwright + chromium）：`pip install -r requirements.txt && playwright install chromium`。用你自己的 Instagram 账号跑一次 `python3 feed_collector.py --login`，登录 cookies 就保存在本机。
-2. 同时登录团队账号（`python3 review_team.py login <名字>`）——池里你的贡献就以这个名字署名。本机还需已设置共享仓库（卡片 1）；没设置的话，采集器会在每次运行结束时提醒你。
-3. 跑 `python3 feed_collector.py --target <条数> --output feed_candidates_mine` 刷 feed 发现视频。每次运行结束，新视频元数据自动推送到共享仓库——每位成员下次 pull 后即进入他们的审阅队列。（团队同步没设置或没登录时，视频先留在本机，下一次成功同步时会一起上传，不会丢。）
-4. 只想手工挑几条？用卡片 6 / `pool add` 即可——采集器负责从 feed 批量发现新视频。
+1. **Collector dependencies（采集器依赖）**——没打勾时卡片会显示需要跑的那一条命令（`pip install -r requirements.txt`），装完点 **Re-check**。
+2. **Instagram login（Instagram 登录）**——点 **Open Instagram login**：弹出浏览器窗口打开 Instagram，你手动登录（用干净账号——feed 没被训练成单一主题的），登录一被检测到会话就自动保存——勾自己会出现。
+3. **Team login（团队登录）**——用你自己的账号登录（卡片上直接登录，或卡片 3）；池里你的贡献就以这个名字署名。
 
-采集器与筛选细节见 RUNBOOK.md；开跑前先读 README.md 的采集纪律（账号卫生、固定停留时间）。
+然后设定采多少条、每条视频在屏幕上停留多少秒（固定停留——每条视频得到同样的观看时长），按 **Start collection**——三个勾全绿按钮才会亮。之后采集器全自动驾驶：自动刷 feed、结束时保存 frame info，并把视频推进全员的审阅队列。进度看卡片上的实时日志，随时可以 **Stop**。没同步成功的采集结果（比如断网）会留在本机，下一次成功同步时一起上传——不会丢。
+
+喜欢命令行？同样的步骤就是几条命令：
+
+```bash
+pip install -r requirements.txt && playwright install chromium   # 一次性
+python3 feed_collector.py --login          # 打开 Instagram，登录后自动保存
+python3 review_team.py login <名字>        # 团队账号
+python3 feed_collector.py --target 100 --output feed_candidates_mine
+python3 feed_collector.py --rescreen --target 100 --output feed_candidates_mine --llm off
+```
+
+只想手工挑几条？用卡片 6 / `pool add` 即可——采集器负责从 feed 批量发现新视频。采集器与筛选细节见 RUNBOOK.md；开跑前先读 README.md 的采集纪律（账号卫生、固定停留时间）。
 
 ## 6. 命令行对照表
 
@@ -139,6 +153,7 @@ python3 team_gui.py            # 打开团队中心
 | 打印合并池 | `python3 review_team.py pool` |
 | 往池子里加视频（全员可见） | `python3 review_team.py pool add <reel链接> [<更多链接>] [--username @作者] [--caption 文案] [--likes 点赞数]` |
 | 打开团队中心 | `python3 review_team.py gui` |
+| 打开团队中心并直接到采集卡片 | `python3 review_team.py collect` |
 | 审阅队列（团队模式） | `python3 review_gui.py` |
 | 为一条 reel 抓 10 帧 | `python3 review_capture.py --url <reel链接>` |
 | 为池中所有缺帧视频抓 10 帧 | `python3 review_capture.py --pool` |

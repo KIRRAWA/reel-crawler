@@ -43,7 +43,7 @@ import review_team as rt
 
 REVIEW_PORT = 8765
 SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
-PAGE_VERSION = '2026-10-26.4'                 # bump to make stale tabs show a reload hint
+PAGE_VERSION = '2026-10-27.1'                 # bump to make stale tabs show a reload hint
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -79,6 +79,13 @@ td.you{font-weight:700}
 .chk{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:14px;color:#1c2330}
 .chk input{width:auto}
 .disagree{color:#b3261e;font-weight:700}
+.step{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;font-size:14px}
+.step .hint{margin:0}
+.step input{width:auto;padding:4px 8px}
+.tick{width:20px;font:700 16px system-ui;color:#1a7f37;text-align:center}
+.tick.off{color:#c6d2e2}
+button.sm{padding:4px 10px;font-size:12px;margin-top:0}
+.clog{display:none;background:#101826;color:#9fb0c6;padding:10px 12px;border-radius:8px;max-height:240px;overflow:auto;font:12px/1.55 ui-monospace,monospace;white-space:pre-wrap;margin-top:10px}
 </style></head>
 <body>
 <header><span class="t">reel-crawler · team hub</span>
@@ -168,10 +175,38 @@ td.you{font-weight:700}
  <div class="msg" id="pool-msg"></div>
 </div>
 
+<div class="card" id="collect-card">
+ <h2>7 · Collect new reels <span class="badge" id="collect-badge"></span></h2>
+ <p class="hint">Every member can find new reels for the pool. The collector opens Instagram in a browser and drives itself: it browses the feed automatically, every reel stays on screen for the same fixed time, and at the end it saves frame info and pushes the videos into everyone's review queue. Tick the three boxes below and the Start button lights up.</p>
+ <div class="step"><span class="tick off" id="tick-deps">·</span><b>1 · Collector dependencies</b> (Playwright + speech model)
+  <button class="act ghost sm" id="btn-deps-check">Re-check</button>
+  <span class="hint" id="deps-help" style="display:none"></span>
+ </div>
+ <div class="step"><span class="tick off" id="tick-ig">·</span><b>2 · Instagram login</b> — use a clean account whose feed has not been trained toward one topic
+  <button class="act ghost sm" id="btn-ig-login">Open Instagram login</button>
+  <span class="hint" id="ig-help"></span>
+ </div>
+ <div class="step"><span class="tick off" id="tick-team">·</span><b>3 · Team login</b> — this name signs your collected videos in the pool
+  <span class="hint" id="team-who"></span>
+  <span id="collect-login" style="display:none"><input type="text" id="cl-name" placeholder="username"><input type="password" id="cl-pw" placeholder="password"><button class="act ghost sm" id="btn-cl-login">Log in</button></span>
+ </div>
+ <div class="row">
+  <div><label for="c-target">How many reels to collect</label><input type="number" id="c-target" min="1" value="100"></div>
+  <div><label for="c-delay">Seconds each reel stays on screen</label><input type="number" id="c-delay" min="1" value="5"></div>
+  <div><label for="c-output">Output folder (local)</label><input type="text" id="c-output" value="feed_candidates_mine"></div>
+  <div><label for="c-minlikes">Minimum likes</label><input type="number" id="c-minlikes" min="0" value="10000"></div>
+ </div>
+ <div class="chk"><input type="checkbox" id="c-rescreen" checked><span>After collecting: screen &amp; save frame info automatically (no LLM — every video goes to the review queue)</span></div>
+ <button class="act" id="btn-collect-start" disabled>Start collection</button>
+ <button class="act ghost" id="btn-collect-stop" style="display:none">Stop</button>
+ <div class="msg" id="collect-msg"></div>
+ <pre class="clog" id="collect-log"></pre>
+</div>
+
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const PAGEV='2026-10-26.4';
+const PAGEV='2026-10-27.1';
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
@@ -264,6 +299,46 @@ $('btn-pool-add').onclick=async()=>{
  msg('pool-msg',r.message,r.ok);
  if(r.ok&&r.added&&r.added.length){$('pool-urls').value='';$('pool-likes').value='';refresh();}
 };
+async function pollCollect(){
+ const s=await api('/api/collect_state');
+ if(!s||s.error)return;
+ const pre=s.prereqs||{};
+ const tick=(on,id)=>{const el=$(id);el.textContent=on?'✓':'·';el.className='tick'+(on?'':' off');};
+ tick(pre.deps,'tick-deps'); tick(pre.ig,'tick-ig'); tick(pre.team,'tick-team');
+ const dh=$('deps-help');
+ dh.textContent=pre.deps?'':('Missing. In the tool folder run:  pip install -r requirements.txt  then Re-check. ('+esc(pre.deps_msg||'')+')');
+ dh.style.display=pre.deps?'none':'';
+ $('ig-help').textContent=s.phase==='login'?'Browser open — log in there; cookies save automatically.':'';
+ $('team-who').textContent=pre.team?('— logged in as '+pre.team):'';
+ $('collect-login').style.display=pre.team?'none':'';
+ const running=!!s.running;
+ const ready=!running&&pre.deps&&pre.ig&&!!pre.team;
+ $('btn-collect-start').disabled=!ready;
+ $('btn-collect-stop').style.display=running?'':'none';
+ $('btn-ig-login').disabled=running;
+ $('collect-badge').textContent=running?
+  (s.phase==='login'?'waiting for Instagram login…':s.phase==='collect'?'collecting…':s.phase==='screen'?'screening & saving frames…':s.phase)
+  :(s.phase==='error'?'error — see log below':s.phase==='done'?'done — see log below':'');
+ const lg=$('collect-log');
+ if(s.log!==undefined){lg.textContent=s.log;lg.scrollTop=lg.scrollHeight;}
+ lg.style.display=(s.log||running)?'':'none';
+}
+$('btn-deps-check').onclick=pollCollect;
+$('btn-ig-login').onclick=async()=>{const r=await api('/api/ig_login');msg('collect-msg',r.error||r.message,r.ok);};
+$('btn-cl-login').onclick=async()=>{
+ const r=await api('/api/login',{name:$('cl-name').value.trim(),pw:$('cl-pw').value});
+ if(r.ok){$('cl-pw').value='';msg('collect-msg',r.message,true);}else msg('collect-msg',r.error||r.message);
+ refresh();
+};
+$('btn-collect-start').onclick=async()=>{
+ const r=await api('/api/collect_start',{target:Number($('c-target').value),delay:Number($('c-delay').value),output:$('c-output').value.trim(),min_likes:Number($('c-minlikes').value),rescreen:$('c-rescreen').checked});
+ msg('collect-msg',r.error||r.message,r.ok);
+ if(r.ok)$('collect-msg').textContent='';
+};
+$('btn-collect-stop').onclick=async()=>{const r=await api('/api/collect_stop');msg('collect-msg',r.error||r.message,r.ok);};
+setInterval(pollCollect,1500);
+pollCollect();
+if(location.hash==='#collect'){const c=$('collect-card');if(c)c.scrollIntoView();}
 refresh();
 </script></body></html>'''
 
@@ -450,6 +525,159 @@ def do_pool_add(urls, username, caption, likes):
             'errors': res['errors'], 'message': '; '.join(parts)}
 
 
+# --------------------------------------------------------------------------
+# collector control: run feed_collector.py from the hub with a live log
+# --------------------------------------------------------------------------
+
+COLLECTOR = rt.ROOT / 'feed_collector.py'
+IG_PROFILE = rt.ROOT / 'instagram-session'
+
+_COLLECT = {'proc': None, 'phase': 'idle', 'log': [], 'exit': None,
+            'stopped': False, 'lock': threading.Lock()}
+
+
+def _coll_log(line):
+    with _COLLECT['lock']:
+        _COLLECT['log'].append(line.rstrip('\n'))
+        del _COLLECT['log'][:-400]
+    print('[collect] ' + line.rstrip('\n'), flush=True)
+
+
+def _coll_running():
+    p = _COLLECT['proc']
+    return p is not None and p.poll() is None
+
+
+def _spawn_collector(args, phase, on_exit=None):
+    """Start feed_collector.py; stream its stdout into the shared log."""
+    cmd = [sys.executable, str(COLLECTOR)] + args
+    proc = subprocess.Popen(cmd, cwd=str(rt.ROOT), env=rt.git_env(),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1, start_new_session=True)
+    with _COLLECT['lock']:
+        _COLLECT['proc'] = proc
+        _COLLECT['phase'] = phase
+        _COLLECT['exit'] = None
+    _coll_log('$ ' + ' '.join(cmd))
+
+    def tail():
+        for line in proc.stdout:
+            _coll_log(line)
+        code = proc.wait()
+        with _COLLECT['lock']:
+            _COLLECT['proc'] = None
+            _COLLECT['exit'] = code
+        _coll_log(f'-- exited with code {code} --')
+        if on_exit:
+            on_exit(code)
+
+    threading.Thread(target=tail, daemon=True).start()
+    return proc
+
+
+def collect_prereqs():
+    """The three checkmarks: collector deps, Instagram login, team login."""
+    deps, deps_msg = True, ''
+    try:
+        import playwright  # noqa: F401
+        import faster_whisper  # noqa: F401
+    except Exception as exc:
+        deps, deps_msg = False, f'{type(exc).__name__}: {exc}'
+    return {'deps': deps, 'deps_msg': deps_msg,
+            'ig': (IG_PROFILE / 'cookies.txt').is_file(),
+            'team': rt.session_user()}
+
+
+def do_ig_login():
+    """Open the collector's browser on Instagram; the login saves itself."""
+    if _coll_running():
+        raise RuntimeError('A collector process is already running -- stop it first.')
+    _spawn_collector(['--login'], 'login',
+                     on_exit=lambda code: _COLLECT.update(phase='idle'))
+    return {'message': 'Browser opened for Instagram login. Log in in the browser '
+                       'window -- the session saves itself once the login registers.'}
+
+
+def do_collect_start(data):
+    if _coll_running():
+        raise RuntimeError('A collector process is already running -- stop it first.')
+    pre = collect_prereqs()
+    if not pre['deps']:
+        raise RuntimeError('Step 1: collector dependencies are not installed. '
+                           f'({pre["deps_msg"]})')
+    if not pre['ig']:
+        raise RuntimeError('Step 2: log in to Instagram first (Open Instagram login).')
+    if not pre['team']:
+        raise RuntimeError('Step 3: log in to the team account first.')
+    target = int(data.get('target') or 100)
+    delay = float(data.get('delay') or 5)
+    min_likes = int(data.get('min_likes') or 0)
+    output = str(data.get('output') or 'feed_candidates_mine')
+    if not 1 <= target <= 100000:
+        raise ValueError('How many reels: 1..100000')
+    if delay < 1 or delay > 120:
+        raise ValueError('Seconds each reel stays on screen: 1..120')
+    if min_likes < 0:
+        raise ValueError('Minimum likes: 0 or more')
+    if not re.fullmatch(r'[\w.-]+', output) or output.startswith('.'):
+        raise ValueError('Output folder: letters, digits, dot, dash, underscore')
+    auto = bool(data.get('rescreen', True))
+
+    base = ['--target', str(target), '--delay', f'{delay:g}', '--output', output,
+            '--min-likes', str(min_likes), '--llm', 'off']
+
+    def screen_done(code):
+        with _COLLECT['lock']:
+            if _COLLECT['stopped']:
+                _COLLECT['phase'] = 'stopped'
+                _COLLECT['stopped'] = False
+            else:
+                _COLLECT['phase'] = 'done' if code == 0 else 'error'
+
+    def collect_done(code):
+        with _COLLECT['lock']:
+            if _COLLECT['stopped']:
+                _COLLECT['phase'] = 'stopped'
+                _COLLECT['stopped'] = False
+                return
+        if code != 0:
+            with _COLLECT['lock']:
+                _COLLECT['phase'] = 'error'
+            return
+        if auto:
+            _coll_log('Collection finished -- screening and saving frame info now (no LLM).')
+            _spawn_collector(['--rescreen', '--target', str(target), '--output', output,
+                              '--llm', 'off'], 'screen', on_exit=screen_done)
+        else:
+            with _COLLECT['lock']:
+                _COLLECT['phase'] = 'done'
+
+    _spawn_collector(base, 'collect', on_exit=collect_done)
+    return {'message': 'Collection started -- the browser browses the feed by itself. '
+                       'Keep its window open.'}
+
+
+def do_collect_stop():
+    p = _COLLECT['proc']
+    if p is None or p.poll() is not None:
+        return {'message': 'Nothing is running.'}
+    with _COLLECT['lock']:
+        _COLLECT['stopped'] = True
+    _coll_log('Stop requested -- closing the collector...')
+    try:
+        p.terminate()
+    except Exception as exc:
+        _coll_log(f'stop error: {exc}')
+
+    def kill_later():
+        time.sleep(5)
+        if p.poll() is None:
+            p.kill()
+
+    threading.Thread(target=kill_later, daemon=True).start()
+    return {'message': 'Stopping...'}
+
+
 def _port_open(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(0.4)
@@ -518,6 +746,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/state':
             self.send_json(state())
             return
+        if self.path.split('?')[0] == '/api/collect_state':
+            with _COLLECT['lock']:
+                log = '\n'.join(_COLLECT['log'][-200:])
+                phase = _COLLECT['phase']
+                running = _COLLECT['proc'] is not None and _COLLECT['proc'].poll() is None
+            self.send_json({'ok': True, 'phase': phase, 'running': running,
+                            'log': log, 'prereqs': collect_prereqs()})
+            return
         self.send_error(404)
 
     def do_POST(self):
@@ -545,6 +781,12 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/pool_add':
                 result = do_pool_add(data.get('urls'), data.get('username'),
                                      data.get('caption'), data.get('likes'))
+            elif path == '/api/collect_start':
+                result = do_collect_start(data)
+            elif path == '/api/collect_stop':
+                result = do_collect_stop()
+            elif path == '/api/ig_login':
+                result = do_ig_login()
             elif path == '/api/review':
                 result = do_review()
             else:
@@ -568,14 +810,17 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--port', type=int, default=8766, help='local server port')
     ap.add_argument('--no-browser', action='store_true', help='do not open the browser')
+    ap.add_argument('--collect', action='store_true',
+                    help='open the page on the collect card (card 7)')
     args = ap.parse_args()
+    hash_part = '#collect' if args.collect else ''
     try:
         server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     except OSError:
         url = f'http://127.0.0.1:{args.port}'
         print(f'Team hub is already running: {url}')
         if not args.no_browser:
-            webbrowser.open(url)
+            webbrowser.open(url + hash_part)
         return
     url = f'http://127.0.0.1:{args.port}'
     if rt.session_user() and not _port_open(REVIEW_PORT):
@@ -588,7 +833,7 @@ def main():
     print(f'Team hub: {url}   (review queue lives on port {REVIEW_PORT})')
     print('Ctrl-C to quit.')
     if not args.no_browser:
-        threading.Timer(0.8, webbrowser.open, [url]).start()
+        threading.Timer(0.8, webbrowser.open, [url + hash_part]).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

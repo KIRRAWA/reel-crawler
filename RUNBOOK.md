@@ -34,7 +34,8 @@ rm -rf feed_candidates_mine review_frames review_videos instagram-session
 python feed_collector.py --login
 ```
 
-Sign in manually in the browser, return to the terminal, press Enter.
+Sign in manually in the browser — the login registers itself (session
+cookie detected) and the cookies save automatically, no Enter needed.
 Cold-account discipline: no manual likes/follows/taps while logged in.
 
 ## 4. Collect (scroll-only, fixed 5s dwell per Reel, never screens)
@@ -115,6 +116,12 @@ One page for setup + accounts + login + sync + progress + disputes:
    member's review queue picks them up after their next pull. For videos
    the team got outside the collector (e.g. downloaded locally); only
    public metadata (URL, @author, likes, caption) is shared.
+7. **Collect new reels** — the collector as a three-step checklist:
+   dependencies, Instagram login, team login, each with a checkmark; set
+   target + dwell, and **Start collection** lights up when all three tick.
+   The collector then browses the feed by itself (uniform dwell, clean
+   account) and saves frame info when the run finishes. Open it directly
+   with `python review_team.py collect`.
 
 ### The command-line way (same functions)
 
@@ -139,6 +146,7 @@ Every reviewer's daily loop:
 ```bash
 python review_team.py sync pull              # fetch everyone's new videos + opinions
 python review_team.py pool add <reel-url> ...   # hand-add videos for everyone to review
+python review_team.py collect                   # open the hub on the collect card (card 7)
 python feed_collector.py --rescreen --target 100 --output feed_candidates_mine
 #   -> collected videos auto-join the pool at the end of every run
 #      (needs team setup (card 1) + login: python review_team.py login <name>)
@@ -150,7 +158,10 @@ python review_team.py disputes               # table of videos reviewers disagre
 ```
 
 Any member can also FIND new videos on their own machine and feed the pool
-automatically:
+automatically — easiest via the hub's **card 7 · Collect new reels**
+(`python review_team.py collect`): tick dependencies, Instagram login,
+team login, set target + dwell, press Start, and the collector drives
+itself. The same steps as plain commands:
 
 ```bash
 pip install -r requirements.txt && playwright install chromium   # once
