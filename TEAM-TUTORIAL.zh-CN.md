@@ -54,7 +54,7 @@ cd reel-crawler
 python3 team_gui.py        # 或：python3 review_team.py gui
 ```
 
-浏览器自动打开 **http://127.0.0.1:8766**——团队中心。从上到下填五张卡片：
+浏览器自动打开 **http://127.0.0.1:8766**——团队中心。从上到下填六张卡片：
 
 **1 · Shared GitHub repo（共享仓库）**
 粘贴仓库 URL（`https://github.com/<账号>/reel-review-sync`），走共用账号路线再粘贴 token。点 **Set up / update remote**。这会在本地创建 `sync_repo/` 文件夹、提交初始状态并推送到 GitHub。之后 URL 和 token 只记在这台机器本地（工具目录旁的隐藏文件 `.hub_credentials.json`，绝不上传），下次打开团队中心会自动填好；想清除就点 **Clear saved URL & token**。
@@ -64,6 +64,9 @@ python3 team_gui.py        # 或：python3 review_team.py gui
 
 **3 · Log in（登录）**
 用你自己的账号登录——团队中心会先核对密码，再从 GitHub 拉取最新共享状态，你的审阅队列因此永远最新。勾选 "Open the review queue right after login" 的话，审阅页（http://127.0.0.1:8765）会在准备就绪后自动打开。注意：**勾选框只在未登录的登录表单里出现**——已经登录时，卡片 3 显示的是 **Open review queue →** 按钮，点它效果完全一样；页面顶部也常驻同一个按钮。如果浏览器拦截了自动弹窗，点这个按钮即可——手动链接永远有效。
+
+**6 · Add videos to the pool（往池子里加视频）**
+任何成员都可以给全组递视频：把 reel 链接一行一个粘进卡片 6，点 **Add to the pool**。这些视频在每位成员下次 pull 后自动进入他们的审阅队列——完全不需要跑采集器。只共享公开元数据（URL、@作者、点赞数、文案）；作者 / 文案 / 点赞数可选，且同一次对所有行生效。适用于团队在采集器之外拿到的视频，比如从本地下载的文件里挑出来的。
 
 配置到此结束。其余卡片每天用（第 5 节）。
 
@@ -106,6 +109,7 @@ python3 team_gui.py            # 打开团队中心
 
   决定**先只存在本机**——按 **Submit**（`s`）时一次性全部上传。提交前随时可以回侧边栏改之前的答案（以最后一次为准，每次修改都留痕）。抽帧不足 10 张（含 0 张）的条目会出现 **Capture 10 frames from link** 按钮——按下即下载该 reel 并按视频时长均匀切出 10 帧，存在本机 `review_frames/` 下；也可以直接点开 reel 链接看视频本身再决定。
 - 队列空了 = 你把整个池审完了。进度对全员可见（卡片 2，或 `python3 review_team.py status`）。
+- **在别处找到了视频？** 用卡片 6（或下面的 `pool add`）把它们放进全员队列，再点一次 **Sync · push** 让大家都看到。
 
 ### 同一台机器也采集（可选）
 
@@ -126,6 +130,7 @@ python3 team_gui.py            # 打开团队中心
 | 全员进度 | `python3 review_team.py status` |
 | 争议视频（表格） | `python3 review_team.py disputes` |
 | 打印合并池 | `python3 review_team.py pool` |
+| 往池子里加视频（全员可见） | `python3 review_team.py pool add <reel链接> [<更多链接>] [--username @作者] [--caption 文案] [--likes 点赞数]` |
 | 打开团队中心 | `python3 review_team.py gui` |
 | 审阅队列（团队模式） | `python3 review_gui.py` |
 | 为一条 reel 抓 10 帧 | `python3 review_capture.py --url <reel链接>` |
@@ -147,7 +152,7 @@ python3 team_gui.py            # 打开团队中心
   | 路径 | 内容 |
   |---|---|
   | `sync_repo/accounts/` | 成员账号（仅哈希） |
-  | `sync_repo/items/<名字>.jsonl` | 每位采集者的视频元数据 |
+  | `sync_repo/items/<名字>.jsonl` | 每位成员的视频元数据（采集或手动添加） |
   | `sync_repo/opinions/<名字>.jsonl` | 每位审阅者的决定，append-only |
   | `sync_repo/pool.json` | 合并池（派生文件，不入库） |
   | `sync_repo/.session.json` | 本机登录者（不入库） |

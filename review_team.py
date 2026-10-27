@@ -32,6 +32,7 @@ Workflow:
   python review_team.py sync pull                  # before reviewing
   ... collect (feed_collector.py) / review (review_gui.py) ...
   python review_team.py sync push                  # after reviewing/collecting
+  python review_team.py pool add <reel-url> ...    # hand-add videos for everyone
   python review_team.py status                     # everyone's progress
   python review_team.py disputes                   # videos reviewers disagree on
 """
@@ -271,6 +272,60 @@ def pool():
     if cached:
         return cached
     return refresh_pool() if SYNC.is_dir() else {}
+
+
+def add_pool_items(user, urls, username='', caption='', likes=None):
+    """Append reel URLs to items/<user>.jsonl so the whole team reviews them.
+
+    Used by `pool add` and the hub's "Add videos to the pool" card -- any
+    member can hand videos (e.g. downloaded locally) to the review pool.
+    Only public metadata travels; videos and frames never leave the machine.
+    Returns {'added': [codes], 'skipped': [codes], 'errors': [(url, msg)]}.
+    """
+    try:
+        likes = int(likes) if likes is not None and likes != '' else None
+    except (TypeError, ValueError):
+        likes = None
+    username = (username or '').lstrip('@').strip()
+    caption = (caption or '')[:200].strip()
+    existing = merged_pool()
+    fpath = SYNC / 'items' / f'{user}.jsonl'
+    fpath.parent.mkdir(parents=True, exist_ok=True)
+    added, skipped, errors = [], [], []
+    with fpath.open('a', encoding='utf-8') as f:
+        for raw in urls:
+            url = (raw or '').strip()
+            if not url:
+                continue
+            c = code(url)
+            if not re.fullmatch(r'[\w-]+', c):
+                errors.append((url, 'not an Instagram reel URL'))
+                continue
+            url = url_of(c)              # normalize to the canonical reel URL
+            if url in existing:
+                skipped.append(c)
+                continue
+            snap = {
+                'url': url,
+                'code': c,
+                'username': username or None,
+                'likes': likes,
+                'caption': caption or None,
+                'duration_seconds': None,
+                'audio_status': None,
+                'model_status': 'review',
+                'model_reason': 'added_manually',
+                'model_category': 'other',
+                'first_seen_utc': now(),
+                'collected_by': user,
+            }
+            f.write(json.dumps(snap, ensure_ascii=False) + '\n')
+            existing[url] = snap
+            added.append(c)
+    if added:
+        refresh_pool()
+        sync_push('pool add')
+    return {'added': added, 'skipped': skipped, 'errors': errors}
 
 
 # --------------------------------------------------------------------------
@@ -585,6 +640,20 @@ def cmd_pool():
     print(json.dumps(pool(), ensure_ascii=False, indent=2))
 
 
+def cmd_pool_add(args):
+    user = require_session()
+    res = add_pool_items(user, args.urls, username=args.username,
+                         caption=args.caption, likes=args.likes)
+    for url, msg in res['errors']:
+        print(f'  ! {url}: {msg}')
+    for c in res['skipped']:
+        print(f'  = {c}: already in the pool')
+    for c in res['added']:
+        print(f'  + {c}: added to the pool for everyone to review')
+    print(f'{len(res["added"])} added, {len(res["skipped"])} already in pool, '
+          f'{len(res["errors"])} bad URL(s).')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -611,7 +680,14 @@ def main():
 
     sub.add_parser('status', help="everyone's review progress")
     sub.add_parser('disputes', help='videos reviewers disagree on (table)')
-    sub.add_parser('pool', help='print the merged video pool as JSON')
+    sp = sub.add_parser('pool', help='manage the merged video pool')
+    psp = sp.add_subparsers(dest='pool_cmd')
+    psp.add_parser('show', help='print the merged pool as JSON')
+    pa = psp.add_parser('add', help='add reel URLs to the pool for everyone to review')
+    pa.add_argument('urls', nargs='+', help='one or more Instagram reel URLs')
+    pa.add_argument('--username', default='', help='@author shown on the cards (optional)')
+    pa.add_argument('--caption', default='', help='caption shown on the cards (optional)')
+    pa.add_argument('--likes', type=int, default=None, help='like count shown on the cards (optional)')
     sub.add_parser('gui', help='open the browser-based team hub (team_gui.py): '
                                'setup, accounts, login, sync, progress')
     args = ap.parse_args()
@@ -638,7 +714,10 @@ def main():
         elif args.cmd == 'disputes':
             cmd_disputes()
         elif args.cmd == 'pool':
-            cmd_pool()
+            if args.pool_cmd == 'add':
+                cmd_pool_add(args)
+            else:
+                cmd_pool()
         elif args.cmd == 'gui':
             subprocess.Popen([sys.executable, str(ROOT / 'team_gui.py')],
                              cwd=str(ROOT), start_new_session=True)

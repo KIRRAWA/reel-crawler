@@ -43,7 +43,7 @@ import review_team as rt
 
 REVIEW_PORT = 8765
 SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
-PAGE_VERSION = '2026-10-26.3'                 # bump to make stale tabs show a reload hint
+PAGE_VERSION = '2026-10-26.4'                 # bump to make stale tabs show a reload hint
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -60,7 +60,8 @@ header button{background:#243040;color:#cfd8e6;border:1px solid #3a4a61;border-r
 .card .hint{color:#5b6b80;font-size:13px;margin:0 0 10px}
 .card h2 .badge{font-size:12px;font-weight:500;color:#2f6fed;margin-left:8px}
 label{display:block;font-size:13px;color:#5b6b80;margin:10px 0 3px}
-input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #c6d2e2;border-radius:8px;font:inherit}
+input[type=text],input[type=password],input[type=number]{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #c6d2e2;border-radius:8px;font:inherit}
+textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #c6d2e2;border-radius:8px;font:inherit;margin:10px 0 2px}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .row>div{flex:1;min-width:200px}
 button.act{background:#2f6fed;color:#fff;border:none;border-radius:8px;padding:9px 18px;font:600 14px system-ui;cursor:pointer;margin-top:12px}
@@ -154,10 +155,23 @@ td.you{font-weight:700}
  <table id="dis-table"><thead><tr><th>Video</th><th>@author</th><th>Verdicts</th></tr></thead><tbody></tbody></table>
 </div>
 
+<div class="card">
+ <h2>6 · Add videos to the pool</h2>
+ <p class="hint">Found reels the team should review (e.g. downloaded locally)? Paste their links here — one per line — and they appear in every member's review queue after their next pull. Only public metadata (URL, author, likes, caption) is shared; no video files leave this machine. Author / caption / likes are optional and apply to all the lines at once.</p>
+ <textarea id="pool-urls" rows="4" placeholder="https://www.instagram.com/reel/AbCd1234/&#10;https://www.instagram.com/reel/EfGh5678/"></textarea>
+ <div class="row">
+  <div><label for="pool-user">@author (optional)</label><input type="text" id="pool-user" placeholder="some.creator"></div>
+  <div><label for="pool-caption">Caption (optional)</label><input type="text" id="pool-caption"></div>
+  <div><label for="pool-likes">Likes (optional)</label><input type="number" id="pool-likes" min="0" placeholder="1200"></div>
+ </div>
+ <button class="act ghost" id="btn-pool-add">Add to the pool</button>
+ <div class="msg" id="pool-msg"></div>
+</div>
+
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const PAGEV='2026-10-26.3';
+const PAGEV='2026-10-26.4';
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
@@ -239,6 +253,17 @@ $('btn-passwd').onclick=async()=>{
 async function doSync(action,btn){btn.disabled=true;const r=await api('/api/sync',{action});btn.disabled=false;msg('sync-msg',r.error||r.message,r.ok);refresh();}
 $('btn-pull').onclick=e=>doSync('pull',e.target);
 $('btn-push').onclick=e=>doSync('push',e.target);
+$('btn-pool-add').onclick=async()=>{
+ const urls=$('pool-urls').value.split('\n').map(s=>s.trim()).filter(Boolean);
+ if(!urls.length){msg('pool-msg','Paste at least one reel URL (one per line).');return;}
+ const likes=$('pool-likes').value.trim();
+ const btn=$('btn-pool-add');btn.disabled=true;
+ const r=await api('/api/pool_add',{urls,username:$('pool-user').value.trim(),caption:$('pool-caption').value.trim(),likes:likes?Number(likes):null});
+ btn.disabled=false;
+ if(r.error){msg('pool-msg',r.error);return;}
+ msg('pool-msg',r.message,r.ok);
+ if(r.ok&&r.added&&r.added.length){$('pool-urls').value='';$('pool-likes').value='';refresh();}
+};
 refresh();
 </script></body></html>'''
 
@@ -403,6 +428,28 @@ def do_sync(action):
     return 'Pushed this machine\'s changes to the shared repo.'
 
 
+def do_pool_add(urls, username, caption, likes):
+    user = rt.session_user()
+    if not user:
+        raise RuntimeError('Log in first (step 3).')
+    urls = [u for u in (urls or []) if isinstance(u, str) and u.strip()]
+    if not urls:
+        raise ValueError('Paste at least one reel URL (one per line).')
+    res = rt.add_pool_items(user, urls, username=username or '',
+                            caption=caption or '', likes=likes)
+    parts = []
+    if res['added']:
+        parts.append(f"added {len(res['added'])}: {' '.join(res['added'])}")
+    if res['skipped']:
+        parts.append(f"{len(res['skipped'])} already in the pool")
+    if res['errors']:
+        parts.append(f"{len(res['errors'])} skipped (not a reel URL)")
+    if not parts:
+        parts.append('nothing to add')
+    return {'added': res['added'], 'skipped': res['skipped'],
+            'errors': res['errors'], 'message': '; '.join(parts)}
+
+
 def _port_open(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(0.4)
@@ -495,6 +542,9 @@ class Handler(BaseHTTPRequestHandler):
                 result = do_password(str(data.get('old') or ''), str(data.get('nu') or ''))
             elif path == '/api/sync':
                 result = do_sync(data.get('action'))
+            elif path == '/api/pool_add':
+                result = do_pool_add(data.get('urls'), data.get('username'),
+                                     data.get('caption'), data.get('likes'))
             elif path == '/api/review':
                 result = do_review()
             else:

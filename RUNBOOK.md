@@ -111,6 +111,10 @@ One page for setup + accounts + login + sync + progress + disputes:
 4. **Sync** — pull before reviewing / push after (the review queue also
    auto-pushes after every decision).
 5. **Disputes** — the videos reviewers disagree on, in one table.
+6. **Add videos to the pool** — paste reel links, one per line, and every
+   member's review queue picks them up after their next pull. For videos
+   the team got outside the collector (e.g. downloaded locally); only
+   public metadata (URL, @author, likes, caption) is shared.
 
 ### The command-line way (same functions)
 
@@ -134,6 +138,7 @@ Every reviewer's daily loop:
 
 ```bash
 python review_team.py sync pull              # fetch everyone's new videos + opinions
+python review_team.py pool add <reel-url> ...   # hand-add videos for everyone to review
 python feed_collector.py --rescreen --target 100 --output feed_candidates_mine
 python review_gui.py --store feed_candidates_mine --frames review_frames
 #   -> team mode: the queue is the whole pool minus YOUR opinions;

@@ -71,7 +71,7 @@ cd reel-crawler
 python3 team_gui.py        # or: python3 review_team.py gui
 ```
 
-Your browser opens **http://127.0.0.1:8766** — the team hub. Fill the five
+Your browser opens **http://127.0.0.1:8766** — the team hub. Fill the six
 cards top to bottom:
 
 **1 · Shared GitHub repo**
@@ -98,6 +98,14 @@ checkbox only appears on the login form — once you are logged in, card 3
 shows an **Open review queue →** button instead (same effect), and the page
 header keeps the same button at all times. If your browser blocks the
 automatic pop-up, just click that button — the manual link always works.
+
+**6 · Add videos to the pool**
+Any member can hand videos to the whole team: paste reel links (one per
+line) into card 6 and click **Add to the pool**. The videos appear in every
+member's review queue after their next pull — no collector run needed. Only
+public metadata (URL, @author, likes, caption) is shared; author, caption,
+and likes are optional and apply to all the lines at once. Use this for
+videos the team got outside the collector, e.g. downloaded locally.
 
 That is the entire setup. The other cards are used every day (section 5).
 
@@ -162,6 +170,8 @@ python3 team_gui.py            # the hub opens
   itself.
 - When the queue is empty, you have reviewed the entire pool. Progress is
   visible to everyone in card 2 and via `python3 review_team.py status`.
+- **Found videos elsewhere?** Card 6 (or `pool add`, below) puts them in
+  everyone's queue — then run **Sync · push** so the team sees them.
 
 ### Collecting on the same machine (optional)
 
@@ -186,6 +196,7 @@ terminal (scriptable, useful over SSH):
 | Everyone's progress | `python3 review_team.py status` |
 | Disputed videos (table) | `python3 review_team.py disputes` |
 | Print the merged pool | `python3 review_team.py pool` |
+| Add videos to the pool for everyone | `python3 review_team.py pool add <reel-link> [<more links>] [--username @u] [--caption text] [--likes N]` |
 | Open the team hub | `python3 review_team.py gui` |
 | Review queue (team mode) | `python3 review_gui.py` |
 | Capture 10 frames for one reel | `python3 review_capture.py --url <reel-link>` |
@@ -213,7 +224,7 @@ terminal (scriptable, useful over SSH):
   | Path | Contents |
   |---|---|
   | `sync_repo/accounts/` | member accounts (hashes only) |
-  | `sync_repo/items/<name>.jsonl` | per-collector video metadata |
+  | `sync_repo/items/<name>.jsonl` | per-member video metadata (collected or hand-added) |
   | `sync_repo/opinions/<name>.jsonl` | per-reviewer decisions, append-only |
   | `sync_repo/pool.json` | merged pool (derived, not committed) |
   | `sync_repo/.session.json` | who is logged in on this machine (not committed) |
