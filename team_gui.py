@@ -321,6 +321,10 @@ def do_setup(url, token):
             r2 = subprocess.run(['git', '-C', str(rt.ROOT), 'clone', cred, 'sync_repo'],
                                 env=rt.git_env(), capture_output=True, text=True)
             if r2.returncode != 0:
+                # A failed clone can leave a partial sync_repo/ behind, which
+                # would poison every later setup attempt -- remove it.
+                if rt.SYNC.is_dir():
+                    shutil.rmtree(str(rt.SYNC))
                 raise RuntimeError('could not reach the remote (wrong token or URL?): '
                                    + (r2.stderr or '').strip()[-200:])
             save_secrets(url, token)

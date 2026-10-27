@@ -44,6 +44,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -449,7 +450,13 @@ def _push():
 def init_local(quiet=False):
     """Create the sync repo structure locally (no remote). Returns True if fresh."""
     if SYNC.is_dir():
-        return False
+        if (SYNC / '.git').is_dir():
+            return False
+        # A leftover folder without .git (e.g. a half-created dir from a
+        # failed git clone) is not a repo -- drop it and start fresh,
+        # otherwise every later git command fails with
+        # "fatal: not a git repository".
+        shutil.rmtree(str(SYNC))
     (SYNC / 'accounts').mkdir(parents=True, exist_ok=True)
     (SYNC / 'items').mkdir(exist_ok=True)
     (SYNC / 'opinions').mkdir(exist_ok=True)
