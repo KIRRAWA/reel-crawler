@@ -112,7 +112,7 @@ python3 team_gui.py            # 打开团队中心
 
   决定**先只存在本机**——按 **Submit**（`s`）时一次性全部上传。提交前随时可以回侧边栏改之前的答案（以最后一次为准，每次修改都留痕）。抽帧不足 10 张（含 0 张）的条目会出现 **Capture 10 frames from link** 按钮——按下即下载该 reel 并按视频时长均匀切出 10 帧，存在本机 `review_frames/` 下；也可以直接点开 reel 链接看视频本身再决定。
 - 队列空了 = 你把整个池审完了。进度对全员可见（卡片 2，或 `python3 review_team.py status`）。
-- **在别处找到了视频？** 用卡片 6（或下面的 `pool add`）把它们放进全员队列，再点一次 **Sync · push** 让大家都看到。
+- **在别处找到了视频？** 用卡片 6（或下面的 `pool add`）把它们放进全员队列，再点一次 **Sync · push** 让大家都看到。卡片 6 的 **Fix metadata** 区可以手工给池里的视频写回作者 / 点赞数 / 文案——查不到时手动补（每次采集跑完后也会自动补采这些）。
 
 ### 找新视频进池（任何成员，可选）
 
@@ -122,7 +122,12 @@ python3 team_gui.py            # 打开团队中心
 2. **Instagram login（Instagram 登录）**——点 **Open Instagram login**：弹出浏览器窗口打开 Instagram，你手动登录（用干净账号——feed 没被训练成单一主题的），登录一被检测到会话就自动保存——勾自己会出现。
 3. **Team login（团队登录）**——用你自己的账号登录（卡片上直接登录，或卡片 3）；池里你的贡献就以这个名字署名。
 
-然后设定采多少条、每条视频在屏幕上停留多少秒（固定停留——每条视频得到同样的观看时长），按 **Start collection**——三个勾全绿按钮才会亮。之后采集器全自动驾驶：自动刷 feed、结束时保存 frame info，并把视频推进全员的审阅队列。进度看卡片上的实时日志，随时可以 **Stop**。没同步成功的采集结果（比如断网）会留在本机，下一次成功同步时一起上传——不会丢。
+然后设定采多少条、每条视频在屏幕上停留多少秒（固定停留——每条视频得到同样的观看时长），按 **Start collection**——三个勾全绿按钮才会亮。之后采集器全自动驾驶：自动刷 feed、结束时保存 frame info，并把视频推进全员的审阅队列。跑完以后它还会自动做两件事：
+
+- **给每条新视频抓 10 帧**——审阅队列立刻就有抽帧证据，不需要额外步骤。
+- **补采缺失的 author / likes**——池里作者或点赞数不明的视频（比如手工加链接进来的）会被自动重新查一遍（不开浏览器、不碰 feed），补齐元数据。
+
+进度看卡片上的实时日志，随时可以 **Stop**。没同步成功的采集结果（比如断网）会留在本机，下一次成功同步时一起上传——不会丢。
 
 喜欢命令行？同样的步骤就是几条命令：
 
@@ -152,6 +157,8 @@ python3 feed_collector.py --rescreen --target 100 --output feed_candidates_mine 
 | 争议视频（表格） | `python3 review_team.py disputes` |
 | 打印合并池 | `python3 review_team.py pool` |
 | 往池子里加视频（全员可见） | `python3 review_team.py pool add <reel链接> [<更多链接>] [--username @作者] [--caption 文案] [--likes 点赞数]` |
+| 手工改一条池视频的作者 / 点赞 | `python3 review_team.py pool edit <短码> [--username @作者] [--likes 点赞数] [--caption 文案]` |
+| 自动补采缺失的作者 / 点赞 | `python3 review_team.py pool enrich [<短码>]`（不给短码 = 补齐池里所有缺作者或缺点赞的视频） |
 | 打开团队中心 | `python3 review_team.py gui` |
 | 打开团队中心并直接到采集卡片 | `python3 review_team.py collect` |
 | 审阅队列（团队模式） | `python3 review_gui.py` |

@@ -494,6 +494,7 @@ def run(args,store,asr,run_id,counters):
                     observed.add(url)
                     if store.add(item,run_id):
                         fresh+=1; counters['new_unique']+=1
+                        counters.setdefault('new_urls',[]).append(url)
                         print(f'New Reel {counters["new_unique"]}/{args.target}: {url}',flush=True)
                     else: counters['duplicates']+=1
                     if counters['new_unique']>=args.target: return
@@ -543,6 +544,61 @@ def team_sync(activity):
         print('Team sync: local collection pushed to the shared repo.', flush=True)
     except Exception as exc:
         print(f'Team sync skipped ({type(exc).__name__}: {exc})', flush=True)
+
+
+def capture_new_frames(output, urls):
+    """Cut 10 frame-evidence frames for the videos found in this run (best effort).
+
+    Runs review_capture.py on this machine's local store, so the review queue
+    has frames without a separate manual step. Never raises -- on failure it
+    prints the command that covers the backlog later (--pool).
+    """
+    codes = []
+    for u in urls:
+        m = re.search(r'/reel/([\w-]+)', u)
+        if m and m.group(1) not in codes:
+            codes.append(m.group(1))
+    if not codes:
+        return
+    script = Path(__file__).resolve().parent / 'review_capture.py'
+    print(f'Capturing frames for {len(codes)} new video(s) (10 frames each)...', flush=True)
+    only_args = []
+    for c in codes:
+        only_args += ['--only', c]
+    try:
+        r = subprocess.run([sys.executable, str(script), '--store', output,
+                            '--frames', 'review_frames'] + only_args,
+                           cwd=str(script.parent), text=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except Exception as exc:
+        print(f'Frame capture skipped ({type(exc).__name__}: {exc}). '
+              'Run later: python review_capture.py --pool', flush=True)
+        return
+    print('\n'.join(r.stdout.strip().splitlines()[-12:]), flush=True)
+    if r.returncode != 0:
+        print(f'Frame capture exited with code {r.returncode} -- run later: '
+              'python review_capture.py --pool', flush=True)
+
+
+def enrich_pool_metadata():
+    """Fill missing author/likes for pool videos after this run (best effort).
+
+    Videos that joined the pool by hand (hub card 6) often have no author or
+    like count. review_team.pool_enrich() refetches those via yt-dlp -- no
+    browser, no feed engagement -- so the team pool heals itself at the end
+    of every collection run. Never raises.
+    """
+    try:
+        import review_team as rt
+    except Exception:
+        return
+    if not rt.SYNC.is_dir() or not rt.session_user():
+        return    # team_sync() already printed what to do
+    try:
+        rt.pool_enrich()
+    except Exception as exc:
+        print(f'Metadata enrich skipped ({type(exc).__name__}: {exc}). '
+              'Run later: python review_team.py pool enrich', flush=True)
 
 
 def main():
@@ -618,6 +674,16 @@ def main():
         # Auto team sync (review_team.py): push the metadata snapshot so the
         # videos found in this run join the shared review pool for everyone.
         team_sync('collect' if not args.rescreen else 'rescreen')
+        # Auto frame capture: every video found in this run gets its 10-frame
+        # evidence right away, so the review queue shows frames with no
+        # separate manual step. (During collection the browser must keep the
+        # uniform dwell cycle, so frames are cut right after the run.)
+        if not args.rescreen and counters.get('new_urls'):
+            capture_new_frames(args.output, counters['new_urls'])
+        # Auto metadata heal: pool videos missing author/likes get them
+        # refetched (yt-dlp, no browser) at the end of every collection run.
+        if not args.rescreen:
+            enrich_pool_metadata()
     raise SystemExit(code)
 
 if __name__=='__main__': main()

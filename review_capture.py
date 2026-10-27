@@ -236,11 +236,14 @@ def main():
     else:
         db = sqlite3.connect(Path(args.store) / 'feed_collection.sqlite')
         db.row_factory = sqlite3.Row
-        q = "SELECT * FROM feed_items WHERE status='review'"
-        params = []
         if args.only:
-            q += ' AND url IN (' + ','.join('?' * len(args.only)) + ')'
-            params += [f'https://www.instagram.com/reel/{c}/' for c in args.only]
+            # Explicitly named codes: capture them regardless of screening
+            # status (freshly collected items are not 'review' yet).
+            q = "SELECT * FROM feed_items WHERE url IN (" + ','.join('?' * len(args.only)) + ')'
+            params = [f'https://www.instagram.com/reel/{c}/' for c in args.only]
+        else:
+            q = "SELECT * FROM feed_items WHERE status='review'"
+            params = []
         rows = [dict(r) for r in db.execute(q + ' ORDER BY first_seen_utc', params)]
         db.close()
     print(f'{len(rows)} item(s) to capture ({args.n} frames each).')

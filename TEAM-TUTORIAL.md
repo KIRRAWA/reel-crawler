@@ -183,6 +183,9 @@ python3 team_gui.py            # the hub opens
   visible to everyone in card 2 and via `python3 review_team.py status`.
 - **Found videos elsewhere?** Card 6 (or `pool add`, below) puts them in
   everyone's queue — then run **Sync · push** so the team sees them.
+  Card 6's **Fix metadata** section writes author / likes / caption for a
+  pool video by hand — useful when a lookup failed (the collector also
+  refills these automatically after each run).
 
 ### Finding new reels for the pool (any member, optional)
 
@@ -204,10 +207,18 @@ screen (uniform dwell — every reel gets the same watch time), and press
 **Start collection** — the button lights up only when all three ticks are
 green. The collector drives itself from there: it browses the feed
 automatically, saves frame info when the run finishes, and pushes the
-videos into everyone's review queue. Watch its progress in the live log on
-the card; **Stop** ends it any time. Collected videos that could not be
-synced (e.g. offline) stay on the machine and go up with the next
-successful sync — nothing is lost.
+videos into everyone's review queue. After the run it also does two things
+by itself:
+
+- **Captures 10 frames for every new video** — the review queue shows
+  frame evidence immediately, no separate step needed.
+- **Refills missing author / likes** — pool videos whose author or like
+  count is unknown (e.g. links added by hand) are looked up again
+  (no browser, no feed activity) and completed automatically.
+
+Watch the progress in the live log on the card; **Stop** ends it any time.
+Collected videos that could not be synced (e.g. offline) stay on the
+machine and go up with the next successful sync — nothing is lost.
 
 Prefer the command line? The same steps work as plain commands:
 
@@ -241,6 +252,8 @@ terminal (scriptable, useful over SSH):
 | Disputed videos (table) | `python3 review_team.py disputes` |
 | Print the merged pool | `python3 review_team.py pool` |
 | Add videos to the pool for everyone | `python3 review_team.py pool add <reel-link> [<more links>] [--username @u] [--caption text] [--likes N]` |
+| Fix a pool video's author / likes by hand | `python3 review_team.py pool edit <code> [--username @u] [--likes N] [--caption text]` |
+| Auto-refill missing author / likes | `python3 review_team.py pool enrich [<codes>]` (no codes = every pool video missing author or likes) |
 | Open the team hub | `python3 review_team.py gui` |
 | Open the hub on the collect card | `python3 review_team.py collect` |
 | Review queue (team mode) | `python3 review_gui.py` |

@@ -43,7 +43,7 @@ import review_team as rt
 
 REVIEW_PORT = 8765
 SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
-PAGE_VERSION = '2026-10-27.2'                 # bump to make stale tabs show a reload hint
+PAGE_VERSION = '2026-10-27.3'                 # bump to make stale tabs show a reload hint
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -173,6 +173,15 @@ button.sm{padding:4px 10px;font-size:12px;margin-top:0}
  </div>
  <button class="act ghost" id="btn-pool-add">Add to the pool</button>
  <div class="msg" id="pool-msg"></div>
+ <h3>Fix metadata of an existing pool video</h3>
+ <p class="hint">Some pool videos have no author or like count (e.g. links added by hand). The collector refills those automatically at the end of every collection run — or write the values here yourself. Empty fields are left unchanged; after saving, other members see the values after their next pull.</p>
+ <div class="row">
+  <div><label for="edit-code">Reel link or shortcode</label><input type="text" id="edit-code" placeholder="AbCd1234"></div>
+  <div><label for="edit-user">@author</label><input type="text" id="edit-user" placeholder="some.creator"></div>
+  <div><label for="edit-likes">Likes</label><input type="number" id="edit-likes" min="0" placeholder="1200"></div>
+  <div><label for="edit-caption">Caption</label><input type="text" id="edit-caption"></div>
+ </div>
+ <button class="act ghost" id="btn-pool-edit">Update this video</button>
 </div>
 
 <div class="card" id="collect-card">
@@ -196,7 +205,7 @@ button.sm{padding:4px 10px;font-size:12px;margin-top:0}
   <div><label for="c-output">Output folder (local)</label><input type="text" id="c-output" value="feed_candidates_mine"></div>
   <div><label for="c-minlikes">Minimum likes</label><input type="number" id="c-minlikes" min="0" value="10000"></div>
  </div>
- <div class="chk"><input type="checkbox" id="c-rescreen" checked><span>After collecting: screen &amp; save frame info automatically (no LLM — every video goes to the review queue)</span></div>
+ <div class="chk"><input type="checkbox" id="c-rescreen" checked><span>After collecting: run the offline screening pass (no LLM — every video goes to the review queue). 10 frames per new video are always captured automatically.</span></div>
  <button class="act" id="btn-collect-start" disabled>Start collection</button>
  <button class="act ghost" id="btn-collect-stop" style="display:none">Stop</button>
  <div class="msg" id="collect-msg"></div>
@@ -206,7 +215,7 @@ button.sm{padding:4px 10px;font-size:12px;margin-top:0}
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const PAGEV='2026-10-27.2';
+const PAGEV='2026-10-27.3';
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
@@ -298,6 +307,17 @@ $('btn-pool-add').onclick=async()=>{
  if(r.error){msg('pool-msg',r.error);return;}
  msg('pool-msg',r.message,r.ok);
  if(r.ok&&r.added&&r.added.length){$('pool-urls').value='';$('pool-likes').value='';refresh();}
+};
+$('btn-pool-edit').onclick=async()=>{
+ const code=$('edit-code').value.trim();
+ if(!code){msg('pool-msg','Paste the reel link or shortcode of the video to update.');return;}
+ const likes=$('edit-likes').value.trim();
+ const btn=$('btn-pool-edit');btn.disabled=true;
+ const r=await api('/api/pool_edit',{code,username:$('edit-user').value.trim(),caption:$('edit-caption').value.trim(),likes:likes?Number(likes):null});
+ btn.disabled=false;
+ if(r.error){msg('pool-msg',r.error);return;}
+ msg('pool-msg',r.message,r.ok);
+ if(r.ok){$('edit-code').value='';$('edit-user').value='';$('edit-likes').value='';$('edit-caption').value='';refresh();}
 };
 async function pollCollect(){
  const s=await api('/api/collect_state');
@@ -523,6 +543,41 @@ def do_pool_add(urls, username, caption, likes):
         parts.append('nothing to add')
     return {'added': res['added'], 'skipped': res['skipped'],
             'errors': res['errors'], 'message': '; '.join(parts)}
+
+
+def do_pool_edit(code, username, caption, likes):
+    user = rt.session_user()
+    if not user:
+        raise RuntimeError('Log in first (step 3).')
+    raw = str(code or '').strip()
+    c = raw if '/' not in raw else rt.code(raw)
+    if not re.fullmatch(r'[\w-]+', c):
+        raise ValueError('Not an Instagram reel URL or shortcode.')
+    url = rt.url_of(c)
+    pool_ = rt.refresh_pool()
+    if url not in pool_:
+        raise ValueError(f'{c} is not in the pool.')
+    fields = {}
+    if str(username or '').strip():
+        fields['username'] = str(username).lstrip('@').strip()
+    if str(likes or '').strip():
+        try:
+            n = int(likes)
+            if n < 0:
+                raise ValueError
+        except ValueError:
+            raise ValueError('Likes must be 0 or more.')
+        fields['likes'] = n
+    if str(caption or '').strip():
+        fields['caption'] = str(caption).strip()[:200]
+    if not fields:
+        raise ValueError('Nothing to update -- fill at least one field.')
+    snap = rt.pool_update_item(url, fields, edited_by=user)
+    rt.refresh_pool()
+    rt.sync_push('pool edit')
+    return {'message': f'{c} updated: @{snap.get("username") or "?"} · '
+                       f'likes {snap.get("likes") if snap.get("likes") is not None else "?"} · '
+                       f'"{snap.get("caption") or ""}"'}
 
 
 # --------------------------------------------------------------------------
@@ -781,6 +836,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/pool_add':
                 result = do_pool_add(data.get('urls'), data.get('username'),
                                      data.get('caption'), data.get('likes'))
+            elif path == '/api/pool_edit':
+                result = do_pool_edit(data.get('code'), data.get('username'),
+                                      data.get('caption'), data.get('likes'))
             elif path == '/api/collect_start':
                 result = do_collect_start(data)
             elif path == '/api/collect_stop':

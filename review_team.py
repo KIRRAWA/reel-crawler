@@ -329,6 +329,128 @@ def add_pool_items(user, urls, username='', caption='', likes=None):
     return {'added': added, 'skipped': skipped, 'errors': errors}
 
 
+def pool_update_item(url, fields, edited_by=None):
+    """Apply metadata fields to a pool video (append a line to the owning items file).
+
+    merged_pool() keeps the last line per URL, so the update is appended to
+    the items/<owner>.jsonl that currently holds the video -- the appended
+    line then wins the merge. Returns the updated item, or None when the URL
+    is not in the pool.
+    """
+    owner, item = None, None
+    for p in sorted((SYNC / 'items').glob('*.jsonl')):
+        for line in p.read_text(encoding='utf-8').splitlines():
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get('url') == url:
+                owner, item = p, rec
+    if item is None:
+        return None
+    snap = dict(item)
+    snap.update(fields)
+    if edited_by:
+        snap['edited_by'] = edited_by
+        snap['edited_utc'] = now()
+    snap.setdefault('code', code(url))
+    with owner.open('a', encoding='utf-8') as f:
+        f.write(json.dumps(snap, ensure_ascii=False) + '\n')
+    return snap
+
+
+def _ig_metadata(url):
+    """(username, likes, caption, duration) for a reel via yt-dlp; None on failure.
+
+    Server-side metadata only -- no browser, no feed interaction. Uses the
+    saved Instagram cookie jar when it exists so non-public videos resolve.
+    """
+    saved = {}
+    for k in list(os.environ):
+        if k.lower() in ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'):
+            saved[k] = os.environ.pop(k)
+    try:
+        import yt_dlp
+    except Exception:
+        return None
+    cookie = ROOT / 'instagram-session' / 'cookies.txt'
+    opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
+            'socket_timeout': 20}
+    if cookie.is_file():
+        opts['cookiefile'] = str(cookie)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception:
+        info = None
+    finally:
+        os.environ.update(saved)
+    if not info:
+        return None
+    return (info.get('uploader'), info.get('like_count'),
+            info.get('title'), info.get('duration'))
+
+
+def pool_enrich(codes=None):
+    """Fill missing author/likes for pool videos via yt-dlp (no browser).
+
+    `pool enrich` calls this with explicit shortcodes; the collector calls it
+    after every collection run so hand-added videos whose metadata was never
+    captured get it automatically. Returns {'updated': n, 'failed': n}.
+    """
+    if not session_user():
+        print('Not logged in -- run: python review_team.py login <name>')
+        return {'updated': 0, 'failed': 0}
+    wanted = set(codes or [])
+    pool_ = refresh_pool()
+    targets = []
+    for url, item in pool_.items():
+        if wanted and item.get('code') not in wanted:
+            continue
+        if not item.get('username') or item.get('likes') is None:
+            targets.append((url, item))
+    if not targets:
+        print('No pool videos are missing author or likes.')
+        return {'updated': 0, 'failed': 0}
+    print(f'Filling missing author/likes for {len(targets)} pool video(s)...',
+          flush=True)
+    updated = failed = 0
+    for url, item in targets:
+        c = item.get('code') or code(url)
+        print(f'  {c}: fetching metadata...', flush=True)
+        meta = _ig_metadata(url)
+        if not meta:
+            failed += 1
+            print(f'  {c}: metadata unavailable -- fill it by hand in the hub (card 6)')
+            continue
+        username, likes, caption, duration = meta
+        fields = {}
+        if username:
+            fields['username'] = username
+        if isinstance(likes, int):
+            fields['likes'] = likes
+        # yt-dlp's title for a reel without a caption is the placeholder
+        # "Video by <uploader>" -- keep the real captions, skip that.
+        if caption and not str(caption).startswith('Video by '):
+            fields['caption'] = str(caption)[:200]
+        if duration:
+            fields['duration_seconds'] = duration
+        if not fields:
+            failed += 1
+            print(f'  {c}: no usable metadata returned')
+            continue
+        pool_update_item(url, fields, edited_by='auto')
+        updated += 1
+        print(f'  {c}: @{fields.get("username", item.get("username"))}, '
+              f'likes {fields.get("likes", item.get("likes"))}')
+    if updated:
+        refresh_pool()
+        sync_push('pool enrich')
+    print(f'Enriched {updated} video(s), {failed} still missing '
+          f'(fill by hand in the hub, card 6).')
+    return {'updated': updated, 'failed': failed}
+
+
 # --------------------------------------------------------------------------
 # opinions: one JSONL line per decision, every decision kept forever
 # --------------------------------------------------------------------------
@@ -655,6 +777,42 @@ def cmd_pool_add(args):
           f'{len(res["errors"])} bad URL(s).')
 
 
+def cmd_pool_enrich(args):
+    pool_enrich(args.codes or None)
+
+
+def cmd_pool_edit(args):
+    user = require_session()
+    raw = args.code.strip()
+    c = raw if '/' not in raw else code(raw)
+    if not re.fullmatch(r'[\w-]+', c):
+        print(f'! not an Instagram reel URL or shortcode: {raw}')
+        return
+    url = url_of(c)
+    if url not in refresh_pool():
+        print(f'! {c} is not in the pool')
+        return
+    fields = {}
+    if args.username:
+        fields['username'] = args.username.lstrip('@').strip()
+    if args.likes is not None:
+        if args.likes < 0:
+            print('! likes must be 0 or more')
+            return
+        fields['likes'] = args.likes
+    if args.caption:
+        fields['caption'] = args.caption[:200].strip()
+    if not fields:
+        print('Nothing to update -- give --username, --likes, or --caption.')
+        return
+    snap = pool_update_item(url, fields, edited_by=user)
+    refresh_pool()
+    sync_push('pool edit')
+    print(f'+ {c}: @{snap.get("username") or "?"} · '
+          f'likes {snap.get("likes") if snap.get("likes") is not None else "?"} · '
+          f'"{snap.get("caption") or ""}"')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -689,6 +847,14 @@ def main():
     pa.add_argument('--username', default='', help='@author shown on the cards (optional)')
     pa.add_argument('--caption', default='', help='caption shown on the cards (optional)')
     pa.add_argument('--likes', type=int, default=None, help='like count shown on the cards (optional)')
+    pe = psp.add_parser('enrich', help='auto-fill missing author/likes for pool videos (yt-dlp)')
+    pe.add_argument('codes', nargs='*',
+                    help='shortcodes to fill (default: every pool video missing author or likes)')
+    pe = psp.add_parser('edit', help='write author/likes/caption for one pool video by hand')
+    pe.add_argument('code', help='reel URL or shortcode already in the pool')
+    pe.add_argument('--username', default='', help='@author to write')
+    pe.add_argument('--caption', default='', help='caption to write')
+    pe.add_argument('--likes', type=int, default=None, help='like count to write')
     sub.add_parser('gui', help='open the browser-based team hub (team_gui.py): '
                                'setup, accounts, login, sync, progress')
     sub.add_parser('collect', help='open the team hub on the collect card '
@@ -719,6 +885,10 @@ def main():
         elif args.cmd == 'pool':
             if args.pool_cmd == 'add':
                 cmd_pool_add(args)
+            elif args.pool_cmd == 'edit':
+                cmd_pool_edit(args)
+            elif args.pool_cmd == 'enrich':
+                cmd_pool_enrich(args)
             else:
                 cmd_pool()
         elif args.cmd == 'gui':

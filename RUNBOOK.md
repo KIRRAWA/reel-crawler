@@ -150,6 +150,9 @@ python review_team.py collect                   # open the hub on the collect ca
 python feed_collector.py --rescreen --target 100 --output feed_candidates_mine
 #   -> collected videos auto-join the pool at the end of every run
 #      (needs team setup (card 1) + login: python review_team.py login <name>)
+#   -> 10 frames per new video are captured automatically after collection
+python review_team.py pool enrich            # refill missing author/likes (also auto after every run)
+python review_team.py pool edit <code> --username @u --likes 1200   # fix one video by hand
 python review_gui.py --store feed_candidates_mine --frames review_frames
 #   -> team mode: the queue is the whole pool minus YOUR opinions;
 #      every g/w/r/u decision is pushed to GitHub immediately
@@ -168,7 +171,8 @@ pip install -r requirements.txt && playwright install chromium   # once
 python feed_collector.py --login          # once: YOUR Instagram account (saves cookies)
 python review_team.py login <name>        # team account — this name signs your items
 python feed_collector.py --target 100 --output feed_candidates_mine
-#   -> new videos auto-join the pool at the end of every run
+#   -> new videos auto-join the pool at the end of every run;
+#      10 frames per new video are captured right after the run
 ```
 
 Notes:
@@ -177,7 +181,8 @@ Notes:
   do, and the videos stay local until your next successful sync — offline
   collection still works, nothing is lost.
 - Card 6 in the hub (or `pool add`) stays the lightweight way to hand-pick
-  single links without collector dependencies.
+  single links without collector dependencies; card 6's **Fix metadata**
+  section (or `pool edit`) writes missing author / likes by hand.
 - `review_gui.py` auto-pulls at startup and pushes after every decision.
 - Undo rewrites the opinion file; historical opinion lines are kept.
 - Disputes = a video where reviewers disagree (reject vs accept, or different
