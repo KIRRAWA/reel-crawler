@@ -469,10 +469,19 @@ def run(args,store,asr,run_id,counters):
             if args.manual_start:
                 input('In this browser, log in if needed and open a playing Reel. Then press Enter here: ')
             check_access(page)
+            # The reels feed renders lazily: on a cold start the first video can
+            # take well past --delay seconds. Wait for it instead of aborting.
+            feed_wait=0
+            while feed_wait<60 and not page.locator('video').count():
+                page.wait_for_timeout(2000); feed_wait+=2
+                check_access(page)
+                if feed_wait%10==0:
+                    print(f'  feed still loading ({feed_wait}s) -- waiting for the first reel to appear...',flush=True)
             page.wait_for_timeout(args.delay*1000)
             print(f'Feed check: {page.locator("video").count()} video elements; URL: {page.url}',flush=True)
             if not page.locator('video').count():
-                raise RuntimeError('No video loaded. Retry with --manual-start and open a playing Reel before pressing Enter.')
+                raise RuntimeError('No video loaded after 60s. Instagram may be asking for a login -- '
+                                   'open Instagram login in the hub (card 7) or run: python feed_collector.py --login')
             stale=0
             for step in range(args.scrolls):
                 check_access(page)
