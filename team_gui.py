@@ -43,7 +43,7 @@ import review_team as rt
 
 REVIEW_PORT = 8765
 SECRETS = rt.ROOT / '.hub_credentials.json'   # URL + token memory for THIS machine
-PAGE_VERSION = '2026-10-27.1'                 # bump to make stale tabs show a reload hint
+PAGE_VERSION = '2026-10-27.2'                 # bump to make stale tabs show a reload hint
 
 PAGE = '''<!doctype html>
 <html><head><meta charset="utf-8"><title>Reel review · team hub</title>
@@ -206,7 +206,7 @@ button.sm{padding:4px 10px;font-size:12px;margin-top:0}
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const PAGEV='2026-10-27.1';
+const PAGEV='2026-10-27.2';
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json();}
 function msg(id,text,ok){const m=$(id);m.textContent=text||'';m.className='msg'+(text?(ok?' ok':' err'):'');}
@@ -289,7 +289,7 @@ async function doSync(action,btn){btn.disabled=true;const r=await api('/api/sync
 $('btn-pull').onclick=e=>doSync('pull',e.target);
 $('btn-push').onclick=e=>doSync('push',e.target);
 $('btn-pool-add').onclick=async()=>{
- const urls=$('pool-urls').value.split('\n').map(s=>s.trim()).filter(Boolean);
+ const urls=$('pool-urls').value.split('\\n').map(s=>s.trim()).filter(Boolean);
  if(!urls.length){msg('pool-msg','Paste at least one reel URL (one per line).');return;}
  const likes=$('pool-likes').value.trim();
  const btn=$('btn-pool-add');btn.disabled=true;
