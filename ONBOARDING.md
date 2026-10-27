@@ -1,30 +1,27 @@
-# Onboarding bulletin — one-minute start for reviewers
+# Onboarding bulletin — one-minute start for new reviewers
 
 **What you need** — Python 3, git, and four items from your lab admin:
 
-| Item | Where it comes from |
-|---|---|
-| The tool ZIP (`review-toolchain` branch) | the lab's GitHub link |
-| The sync repo URL (private) | the lab admin |
-| The shared GitHub token | the lab admin (pasted once per machine) |
-| Your in-app account + password | created by the lab admin |
 
-No GitHub account of your own. No Playwright, no Ollama, no other
-dependencies — reviewing uses only the Python standard library.
+1. The tool ZIP (`review-toolchain` branch) from the lab's GitHub page 
+(https://github.com/KIRRAWA/reel-crawler) Download from the review tool chain
+2. The sync repo URL (Will be posted in General in Slack)
+3. The shared GitHub token (Will be posted in General in Slack, is a passcode 
+to modify our lab data, should be kept within our lab)
+4. Your in-app account + password (You create it by yourself when needed in the app)
 
 **Five steps**
-
+(The following cd and run steps should be performed in your terminal)
 1. Unzip the tool ZIP and `cd` into it (the folder name carries a
    `-review-toolchain` suffix).
 2. Run `python3 team_gui.py` — the hub opens at http://127.0.0.1:8766.
-3. **Card 1 · Shared GitHub repo** — paste the sync repo URL and the shared
-   token. The hub clones the repo automatically. The token is saved in a
+3. In the web page window that automatically opens, paste the sync repo URL and the 
+   shared token. The hub clones the repo automatically. The token is saved in a
    local hidden file on this machine only, never shown again.
-4. **Card 3 · Log in on this machine** — log in with **your own in-app
-   account** (not a GitHub account).
+4. log in with your own in-app account (or create one) (not a GitHub account).
 5. Click **Open review queue** → start reviewing.
 
-**While reviewing** — it works like an exam paper:
+**While reviewing** — it works like an online exam
 
 | Key | Action |
 |---|---|
