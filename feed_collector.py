@@ -488,6 +488,38 @@ def run(args,store,asr,run_id,counters):
         finally: context.close()
 
 
+def team_sync(activity):
+    """Push this machine's collected metadata to the team pool (review_team.py).
+
+    Called at the end of every run so the videos a member finds join the
+    shared review pool automatically. Never raises -- when the team sync is
+    not set up on this machine (no sync repo, or not logged in), it prints
+    what to do instead of failing the collection.
+    """
+    try:
+        import review_team as rt
+    except Exception:
+        return
+    if not rt.SYNC.is_dir():
+        print('Team sync skipped: the shared repo is not set up on this machine. '
+              'Run python3 team_gui.py once (card 1) and log in -- then your '
+              'collected videos join the review pool automatically at the end '
+              'of every run.', flush=True)
+        return
+    if not rt.session_user():
+        print('Team sync skipped: not logged in. Run python3 review_team.py '
+              'login <name> -- collected videos then join the review pool '
+              'automatically. (You can also hand-pick videos in the hub, '
+              'card 6.)', flush=True)
+        return
+    try:
+        rt.export_items(rt.session_user())
+        rt.sync_push(activity, quiet=True)
+        print('Team sync: local collection pushed to the shared repo.', flush=True)
+    except Exception as exc:
+        print(f'Team sync skipped ({type(exc).__name__}: {exc})', flush=True)
+
+
 def main():
     # This Mac's shell exports proxy variables pointing at a dead local proxy
     # (127.0.0.1:10887). yt-dlp and requests read them from the environment and
@@ -558,16 +590,9 @@ def main():
         if not args.rescreen:
             print('Screening is disabled during collection. To screen the collected items offline (no browser, no feed activity):')
             print(f'  python feed_collector.py --rescreen --target {counters["new_unique"]} --output {args.output}')
-        # Auto team sync (review_team.py): push the metadata snapshot and any
-        # new opinions to the shared repo. Never breaks collection on failure.
-        try:
-            import review_team as rt
-            if rt.SYNC.is_dir() and rt.session_user():
-                rt.export_items(rt.session_user())
-                rt.sync_push('collect' if not args.rescreen else 'rescreen',quiet=True)
-                print('Team sync: local collection pushed to the shared repo.',flush=True)
-        except Exception as exc:
-            print(f'Team sync skipped ({type(exc).__name__}: {exc})',flush=True)
+        # Auto team sync (review_team.py): push the metadata snapshot so the
+        # videos found in this run join the shared review pool for everyone.
+        team_sync('collect' if not args.rescreen else 'rescreen')
     raise SystemExit(code)
 
 if __name__=='__main__': main()

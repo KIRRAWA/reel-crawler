@@ -173,12 +173,29 @@ python3 team_gui.py            # the hub opens
 - **Found videos elsewhere?** Card 6 (or `pool add`, below) puts them in
   everyone's queue — then run **Sync · push** so the team sees them.
 
-### Collecting on the same machine (optional)
+### Finding new reels for the pool (any member, optional)
 
-If you also collect with an Instagram account, run the collector as usual —
-`python3 feed_collector.py ...` — and your new videos are pushed to the pool
-automatically when the run finishes. See RUNBOOK.md for the collector/screening
-workflow.
+Reviewing needs no extra setup, but any member can also FIND new reels with
+the collector and hand them to the pool automatically:
+
+1. Install the collector's dependencies once (Playwright + chromium):
+   `pip install -r requirements.txt && playwright install chromium`. Log in
+   to YOUR Instagram account once with `python3 feed_collector.py --login` —
+   it saves the login cookies on this machine.
+2. Log in to the team account too (`python3 review_team.py login <name>`) —
+   that is the name your contributions carry in the pool. The shared repo
+   must be set up on the machine (card 1); if it is not, the collector says
+   so at the end of a run.
+3. Run `python3 feed_collector.py --target <n> --output feed_candidates_mine`
+   to browse the feed. At the end of every run the new videos are pushed to
+   the shared repo automatically — every member's queue picks them up after
+   their next pull. (Without team setup or login the videos stay on your
+   machine and go up with your next successful sync — nothing is lost.)
+4. Prefer picking single videos by hand? Card 6 / `pool add` does that —
+   the collector is for discovering new videos from the feed.
+
+Collector and screening details: RUNBOOK.md. Read README.md for the
+collection policy (account hygiene, uniform dwell) before you run it.
 
 ## 6. Command-line reference
 

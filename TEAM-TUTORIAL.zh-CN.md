@@ -111,9 +111,16 @@ python3 team_gui.py            # 打开团队中心
 - 队列空了 = 你把整个池审完了。进度对全员可见（卡片 2，或 `python3 review_team.py status`）。
 - **在别处找到了视频？** 用卡片 6（或下面的 `pool add`）把它们放进全员队列，再点一次 **Sync · push** 让大家都看到。
 
-### 同一台机器也采集（可选）
+### 找新视频进池（任何成员，可选）
 
-如果你也用 Instagram 账号采集，照常运行采集器——`python3 feed_collector.py ...`——跑完新视频会自动推入池子。采集/筛选流程见 RUNBOOK.md。
+审阅无需任何额外安装，但任何成员也可以用采集器**发现**新视频，并自动递进全员审核池：
+
+1. 一次性装好采集器依赖（Playwright + chromium）：`pip install -r requirements.txt && playwright install chromium`。用你自己的 Instagram 账号跑一次 `python3 feed_collector.py --login`，登录 cookies 就保存在本机。
+2. 同时登录团队账号（`python3 review_team.py login <名字>`）——池里你的贡献就以这个名字署名。本机还需已设置共享仓库（卡片 1）；没设置的话，采集器会在每次运行结束时提醒你。
+3. 跑 `python3 feed_collector.py --target <条数> --output feed_candidates_mine` 刷 feed 发现视频。每次运行结束，新视频元数据自动推送到共享仓库——每位成员下次 pull 后即进入他们的审阅队列。（团队同步没设置或没登录时，视频先留在本机，下一次成功同步时会一起上传，不会丢。）
+4. 只想手工挑几条？用卡片 6 / `pool add` 即可——采集器负责从 feed 批量发现新视频。
+
+采集器与筛选细节见 RUNBOOK.md；开跑前先读 README.md 的采集纪律（账号卫生、固定停留时间）。
 
 ## 6. 命令行对照表
 

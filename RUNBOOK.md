@@ -140,6 +140,8 @@ Every reviewer's daily loop:
 python review_team.py sync pull              # fetch everyone's new videos + opinions
 python review_team.py pool add <reel-url> ...   # hand-add videos for everyone to review
 python feed_collector.py --rescreen --target 100 --output feed_candidates_mine
+#   -> collected videos auto-join the pool at the end of every run
+#      (needs team setup (card 1) + login: python review_team.py login <name>)
 python review_gui.py --store feed_candidates_mine --frames review_frames
 #   -> team mode: the queue is the whole pool minus YOUR opinions;
 #      every g/w/r/u decision is pushed to GitHub immediately
