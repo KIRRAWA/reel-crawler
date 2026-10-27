@@ -6,7 +6,8 @@ Everything the lab needs to collect Instagram reels, screen them, and have
 **every member review every video** — with all opinions kept and synced
 through one private GitHub repo.
 
-- **New to the team?** Start at [2. What you need](#2-what-you-need), then follow
+- **New to the team?** Start with the one-page [ONBOARDING.md](ONBOARDING.md)
+  bulletin, then see [2. What you need](#2-what-you-need) and
   [4. Adding your machine](#4-adding-your-machine).
 - **Just reviewing today?** Jump to [5. Daily loop](#5-daily-loop---review).
 - **Prefer the command line?** Every GUI action has a CLI equivalent —
